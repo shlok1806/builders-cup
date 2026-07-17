@@ -32,9 +32,10 @@ Plus an agent that builds the cart from plain English so nobody does the shoppin
 | Vendor | Single, seeded catalog | Kills scraping fragility; time-save still lands |
 | DB / realtime | Supabase (Postgres + Realtime) | Realtime powers the live approval beat |
 | Agent | OpenAI API, two calls only | Cart builder + policy compiler |
+| App target | Mobile-first installable PWA served from the laptop while the laptop is joined to the phone's hotspot/local LAN | Feels like a phone app without native build/app-store overhead |
 | Split engine | Deterministic code, not the LLM | Splitting is math once rules are compiled; reliable |
 
-**Out of scope, say it if asked:** real auth, ACH/bank funding, card issuing, multi-vendor, live web scraping, real external merchant checkout, mobile native, RLS/security hardening, refunds/disputes/partial-auth edge cases, vendor payout (we build the collection side; paying the merchant is mocked).
+**Out of scope, say it if asked:** real auth, ACH/bank funding, card issuing, multi-vendor, live web scraping, real external merchant checkout, native mobile/app-store build, RLS/security hardening, refunds/disputes/partial-auth edge cases, vendor payout (we build the collection side; paying the merchant is mocked). The demo target is a mobile-first PWA installed from the local web app.
 
 ---
 
@@ -42,9 +43,9 @@ Plus an agent that builds the cart from plain English so nobody does the shoppin
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  Next.js (App Router)                                     │
-│  - UI: cart, split view, policies, approval, dashboard   │
-│  - API routes = the backend                              │
+│  Next.js mobile-first PWA (App Router)                     │
+│  - UI: cart, split view, policies, approval, dashboard     │
+│  - API routes = the backend; served on laptop local IP     │
 └───────────────┬─────────────────────────┬───────────────┘
                 │                          │
         ┌───────▼────────┐        ┌────────▼─────────┐
@@ -62,7 +63,7 @@ Plus an agent that builds the cart from plain English so nobody does the shoppin
         └───────────────────────────────────────────────────┘
 ```
 
-**The one flow everything serves:** describe → agent builds cart → deterministic split applies compiled policies → any flagged line needs approval (realtime) → checkout fires N PaymentIntents → dashboard updates.
+**The one flow everything serves:** describe → agent builds cart → deterministic split applies compiled policies → any flagged line needs approval (realtime) → checkout fires N PaymentIntents → dashboard updates, all optimized for the phone-sized PWA.
 
 The LLM appears in exactly two places: turning free text into a cart, and turning a rule sentence into structured policy. Everything on the money path (splitting, thresholds, charging) is deterministic code. That's deliberate: the demo cannot hinge on a model behaving live.
 
@@ -120,13 +121,13 @@ Categories matter (they drive policy matching): groceries, alcohol, cleaning, me
 
 Each feature: what it does, the UX, the data it touches, whether the LLM is involved, the owner, and the reliability note.
 
-### F1 — Household shell + roommate switcher + wallet/dashboard frame
-**Does:** the container. Seeded household, 4 roommates with avatars/colors, a dropdown to switch "who am I", the dashboard shell the demo opens on.
-**UX:** top bar with household name + user switcher. Landing = dashboard (F7).
+### F1 — Mobile-first PWA shell + roommate switcher + wallet/dashboard frame
+**Does:** the installable PWA container. Seeded household, 4 roommates with avatars/colors, a dropdown to switch "who am I", the dashboard shell the demo opens on, and mobile-safe layout/metadata.
+**UX:** phone-first top bar with household name + user switcher. Landing = dashboard (F7). The laptop joins the phone's hotspot/local LAN and hosts Next.js on `0.0.0.0`; the phone opens `http://<laptop-local-ip>:3000`, then adds it to the home screen as the PWA.
 **Data:** `households`, `users`.
 **LLM:** no.
 **Owner:** P1 (frontend).
-**Reliability:** pure seeded read. Pre-load one prior purchase so the app never opens empty.
+**Reliability:** pure seeded read. Pre-load one prior purchase so the app never opens empty. Verify on an actual phone viewport and installed PWA path, not just desktop Chrome.
 
 ### F2 — Agentic cart builder (REAL, differentiator)
 **Does:** free text → a categorized cart from the seeded catalog, deduped against recent house purchases.
@@ -160,11 +161,11 @@ Each feature: what it does, the UX, the data it touches, whether the LLM is invo
 
 ### F5 — Multiparty approval (realtime)
 **Does:** a flagged line pauses checkout until the responsible roommate approves.
-**UX:** approver's device (phone via `?user=<id>`) gets a live card: "Approve $52 tequila?" → tap approve → checkout resumes. Decline → the line is removed from the purchase, the split re-runs without it, checkout continues (§12).
+**UX:** approver's phone runs the installed PWA (`/approve?user=<id>`) and gets a live card: "Approve $52 tequila?" → tap approve → checkout resumes. Decline → the line is removed from the purchase, the split re-runs without it, checkout continues (§12).
 **Data:** `approvals`; Supabase Realtime channel on that table.
 **LLM:** no.
 **Owner:** P3 (backend) + P1 (approval UI).
-**Reliability:** Supabase Realtime is primary (it's why we're on Supabase). **Setup gotcha:** the `approvals` table must be added to the realtime publication (`alter publication supabase_realtime add table approvals`) and the browser must subscribe with the anon key — verify a live event fires before hour 6. Keep a 1.5s polling fallback wired behind a flag in case venue wifi is flaky. Rehearse the two-device handoff on a phone hotspot. Approver screen open before the beat.
+**Reliability:** Supabase Realtime is primary (it's why we're on Supabase). **Setup gotcha:** the `approvals` table must be added to the realtime publication (`alter publication supabase_realtime add table approvals`) and the browser must subscribe with the anon key — verify a live event fires before hour 6. Keep a 1.5s polling fallback wired behind a flag in case venue wifi is flaky. Rehearse the two-device handoff with the phone providing the hotspot/local LAN and the laptop joined to it: run Next.js on `0.0.0.0`, open `http://<laptop-local-ip>:3000/approve?user=<sam>` on the phone, add it to the home screen as the PWA, and keep that approver screen open before the beat.
 
 ### F6 — Multi-card collection at checkout (REAL, pitch headline)
 **Does:** on checkout, fire one PaymentIntent per roommate for their share, on their saved test card. All at once.
@@ -247,7 +248,7 @@ P4 owning the demo matters: their job is that it doesn't break on stage.
 
 ## 9. Build order + time boxes (~8-9h)
 
-**0–0.5h — Scaffold.** Next.js repo, Supabase project, run schema migration, seed catalog + 4 roommates + Stripe customers/PMs + one prior purchase. Whole team agrees the 7 demo beats.
+**0–0.5h — Scaffold.** Next.js repo, mobile-first PWA shell/manifest, Supabase project, run schema migration, seed catalog + 4 roommates + Stripe customers/PMs + one prior purchase. Whole team agrees the 7 demo beats.
 
 **0.5–2.5h — Parallel spines.**
 - P1: app shell + cart view + split view on seed data.
@@ -271,7 +272,7 @@ P4 owning the demo matters: their job is that it doesn't break on stage.
 2. **(30s) Constitution.** Show pre-set rules, type one live ("don't split alcohol to me"), it compiles to a chip. *Wow 1.*
 3. **(40s) Cart builder.** Type "restock + snacks for Friday." Agent builds the cart, skips the paper towels Sam bought Tuesday. *Wow 2.*
 4. **(30s) Policy split.** Split view: alcohol skips the non-drinker, meat skips the vegetarian, the $52 item trips Sam's $40 approval threshold and gets flagged. *Wow 3.*
-5. **(25s) Approval.** Flagged line pings Sam's phone (it's *his* $40 rule), he approves live. *Wow 4.*
+5. **(25s) Approval.** Flagged line pings Sam's installed phone PWA (it's *his* $40 rule), he approves live. *Wow 4.*
 6. **(25s) Collection.** Checkout: four cards charged their exact share at once, real in sandbox. *Money shot.*
 7. **(15s) Close.** Dashboard updates, categorized. Savings card: "$X saved, one click." "Splitwise logs the debt. We delete it."
 
@@ -282,7 +283,7 @@ P4 owning the demo matters: their job is that it doesn't break on stage.
 | Risk | Mitigation |
 |---|---|
 | LLM returns bad JSON live | Validate + re-ask once; cached good response for the exact demo input |
-| Realtime flaky on venue wifi | Polling fallback behind a flag; run approval on a phone hotspot |
+| Realtime flaky on venue wifi or phone cannot reach laptop | Polling fallback behind a flag; use the phone as the hotspot/local LAN, join the laptop to it, serve Next.js on `0.0.0.0`, open `http://<laptop-local-ip>:3000`, and install as the PWA before rehearsal |
 | A PaymentIntent errors on stage | Charges row shows `failed` gracefully; flow continues; rehearsed |
 | Split math doesn't reconcile | Unit test redistribution against the seed cart; totals must equal subtotal |
 | Scope creep past hour 6 | Hard feature freeze; P4 enforces rehearsal time |

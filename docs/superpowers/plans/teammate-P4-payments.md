@@ -52,7 +52,7 @@ For each of the 4 users: `stripe.customers.create()` → `stripe.paymentMethods.
 ## Task P4.4: Rehearsal + fallbacks — YOU OWN THE DEMO
 - [ ] Record the checkout money-shot as a fallback video.
 - [ ] With P2: verify cached-LLM fallbacks fire for the two exact demo prompts (network unplugged).
-- [ ] With P1/P3: rehearse the two-device approval handoff on a phone hotspot; approver screen (`/approve?user=<sam>`) open before the beat.
+- [ ] With P1/P3: rehearse the two-device approval handoff using the real mobile PWA route — phone provides the hotspot/local LAN, laptop joins it and runs `next dev -H 0.0.0.0`, phone opens `http://<laptop-local-ip>:3000/approve?user=<sam>`, adds it to the home screen, and keeps the approver screen open before the beat.
 - [ ] Run the full 7-beat demo 5+ times. **Enforce the hour-6 feature freeze** — after rehearsal starts, no new code.
 
 ## Integration gates you're on
