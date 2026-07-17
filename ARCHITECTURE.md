@@ -248,7 +248,7 @@ P4 owning the demo matters: their job is that it doesn't break on stage.
 
 ## 9. Build order + time boxes (~8-9h)
 
-**0–0.5h — Scaffold.** Next.js repo, mobile-first PWA shell/manifest, Supabase project, run schema migration, seed catalog + 4 roommates + Stripe customers/PMs + one prior purchase. Whole team agrees the 7 demo beats.
+**0–0.5h — Scaffold.** Next.js repo, mobile-first PWA shell/manifest, Supabase project, run schema migration, seed catalog + 4 roommates + Stripe customers/PMs + one prior purchase. Whole team agrees the 7 demo beats and proves the actual phone can open/install the laptop-hosted PWA before tracks split.
 
 **0.5–2.5h — Parallel spines.**
 - P1: app shell + cart view + split view on seed data.
@@ -284,6 +284,7 @@ P4 owning the demo matters: their job is that it doesn't break on stage.
 |---|---|
 | LLM returns bad JSON live | Validate + re-ask once; cached good response for the exact demo input |
 | Realtime flaky on venue wifi or phone cannot reach laptop | Polling fallback behind a flag; use the phone as the hotspot/local LAN, join the laptop to it, serve Next.js on `0.0.0.0`, open `http://<laptop-local-ip>:3000`, and install as the PWA before rehearsal |
+| Local-IP PWA install fails on the actual phone/browser | Treat phone access as a Phase-0 blocking gate. If `http://<laptop-local-ip>:3000` cannot install/launch, switch immediately to same-Wi-Fi, HTTPS tunnel (`cloudflared`/`ngrok`), or Android USB port forwarding; keep fallback recording as last resort |
 | A PaymentIntent errors on stage | Charges row shows `failed` gracefully; flow continues; rehearsed |
 | Split math doesn't reconcile | Unit test redistribution against the seed cart; totals must equal subtotal |
 | Scope creep past hour 6 | Hard feature freeze; P4 enforces rehearsal time |

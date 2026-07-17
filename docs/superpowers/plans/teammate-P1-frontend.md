@@ -21,7 +21,7 @@
 - `GET /api/purchase/[id]/summary → { savedCents, stepsCollapsed }` — P4
 
 ## Phase 0 (whole team, blocking — do NOT start your track until green)
-**You lead Task 0.1 (scaffold):** `npx create-next-app@latest . --ts --app --tailwind --eslint --use-npm --yes`, install deps, add `app/manifest.ts` + `public/icon-192.png` + `public/icon-512.png`, add `dev:mobile` (`next dev -H 0.0.0.0`), write `.env.local` + `lib/supabase.ts`. See master plan for exact steps. Then join 0.4 (agree the 7 beats + numbers).
+**You lead Task 0.1 + 0.5 (scaffold + mobile gate):** `npx create-next-app@latest . --ts --app --tailwind --eslint --use-npm --yes`, install deps, add `app/manifest.ts` + `public/icon-192.png` + `public/icon-512.png`, add `dev:mobile` (`next dev -H 0.0.0.0`) + `start:mobile` (`next start -H 0.0.0.0`), write `.env.local` + `lib/supabase.ts`, then prove the actual demo phone can open the laptop IP, add the app to home screen, launch it, and load `/approve?user=<sam>`. See master plan for exact steps. Then join 0.4 (agree the 7 beats + numbers).
 
 ---
 
