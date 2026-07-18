@@ -24,6 +24,7 @@ export async function GET() {
       'amount_cents, user_id, users(name), purchase_items!inner(category, purchases!inner(created_at, household_id, status))'
     )
     .eq('purchase_items.purchases.household_id', household.id)
+    .eq('purchase_items.purchases.status', 'charged')
     .gte('purchase_items.purchases.created_at', monthStart)
 
   type Row = {
@@ -37,15 +38,11 @@ export async function GET() {
   const one = <T,>(v: T | T[] | null): T | null => (Array.isArray(v) ? v[0] ?? null : v)
 
   let thisMonthCents = 0
-  let owedCents = 0 // splits on purchases not yet charged (settled)
   const byCat = new Map<string, number>()
   const byUser = new Map<string, { name: string; cents: number }>()
-  const pendingUsers = new Set<string>() // owe money on an uncharged purchase
   for (const r of rows) {
     thisMonthCents += r.amount_cents
     const pi = one(r.purchase_items)
-    const settled = one(pi?.purchases ?? null)?.status === 'charged'
-    if (!settled) { owedCents += r.amount_cents; pendingUsers.add(r.user_id) }
     const cat = pi?.category ?? 'other'
     byCat.set(cat, (byCat.get(cat) ?? 0) + r.amount_cents)
     const name = one(r.users)?.name ?? ''
@@ -66,8 +63,8 @@ export async function GET() {
     })),
     budgetCents: household.monthly_budget_cents,
     overBudget: thisMonthCents > household.monthly_budget_cents,
-    owedCents,
-    chargedUsers: byUser.size - pendingUsers.size,
+    owedCents: 0,
+    chargedUsers: byUser.size,
     totalUsers: byUser.size,
     agentSavedThisMonthCents: await agentSavedThisMonth(db, household.id, monthStart),
   })
@@ -82,11 +79,11 @@ async function agentSavedThisMonth(
 ): Promise<number> {
   const { data } = await db
     .from('purchase_items')
-    .select('product_id, qty, purchases!inner(household_id, created_at)')
+    .select('product_id, qty, purchases!inner(household_id, created_at, status)')
     .eq('purchases.household_id', householdId)
+    .eq('purchases.status', 'charged')
     .gte('purchases.created_at', monthStart)
     .not('product_id', 'is', null)
-
   const lines = (data ?? []) as unknown as { product_id: string; qty: number }[]
   const perUnit = new Map<string, number>()
   let saved = 0

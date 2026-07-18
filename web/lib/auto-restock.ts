@@ -18,6 +18,7 @@ export type AutoRestockResult = {
   overBudget: boolean
 }
 
+
 export async function runAutoRestock(householdId: string): Promise<AutoRestockResult> {
   const db = admin()
   const due = await dueItems(householdId)

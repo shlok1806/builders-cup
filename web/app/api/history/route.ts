@@ -15,6 +15,7 @@ export async function GET() {
       'id, created_at, status, subtotal_cents, note, purchase_items(name, qty, unit_price_cents, category, item_splits(amount_cents, user_id, users(name)))'
     )
     .eq('household_id', household.id)
+    .eq('status', 'charged')
     .order('created_at', { ascending: false })
     .limit(50)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { admin } from '@/lib/supabase'
+import { checkoutPurchase } from '@/lib/checkout'
 import { runSplit, recomputeSubtotal } from '@/lib/split-run'
 
 // P3.3 — F5 logic. Approve or decline a flagged line.
@@ -28,14 +29,22 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ ok: true })
   }
 
-  // approved
-  await db.from('approvals').update({ status: 'approved' }).eq('id', id)
-  const { count } = await db
+  // Approving the final pending rule is the only path that can start checkout.
+  // The checkout service re-checks the pending count before it calls Stripe.
+  const { error: approvalError } = await db.from('approvals').update({ status: 'approved' }).eq('id', id)
+  if (approvalError) return NextResponse.json({ error: approvalError.message }, { status: 500 })
+
+  const { count, error: countError } = await db
     .from('approvals')
     .select('id', { count: 'exact', head: true })
     .eq('purchase_id', approval.purchase_id)
     .eq('status', 'pending')
-  if (!count)
-    await db.from('purchases').update({ status: 'building' }).eq('id', approval.purchase_id)
-  return NextResponse.json({ ok: true })
+  if (countError) return NextResponse.json({ error: countError.message }, { status: 500 })
+  if (count) return NextResponse.json({ ok: true, awaitingOtherApprovals: true })
+
+  const checkout = await checkoutPurchase(approval.purchase_id, db)
+  return NextResponse.json(
+    { ok: checkout.status === 200, ...checkout.body },
+    { status: checkout.status },
+  )
 }
