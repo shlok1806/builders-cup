@@ -1,7 +1,8 @@
 "use client";
 
 import { Avatar, Icon } from "@/components/ui";
-import { fmtCents, people } from "@/lib/data";
+import { fmtCents } from "@/lib/data";
+import { useUsers } from "@/lib/useUsers";
 import type { SplitLineView } from "@/lib/split-run";
 
 const catBg: Record<string, string> = {
@@ -9,16 +10,14 @@ const catBg: Record<string, string> = {
   household: "bg-household", snacks: "bg-snacks", cleaning: "bg-cleaning",
 };
 
-// userId → display. Known seeded users get initials/color; unknown UUIDs degrade
-// gracefully (no names in the split payload).
-const who = (id: string) => {
-  const p = people.find((x) => x.id === id);
-  return p ?? { name: id.slice(0, 6), initials: id.slice(0, 2).toUpperCase(), color: "accent" };
-};
-
 // Per-line split with annotations: excluded members (present elsewhere, absent
 // here) + the approval flag.
 export default function SplitView({ lines }: { lines: SplitLineView[] }) {
+  const { byId } = useUsers();
+  // userId → display. Real users resolve via the roster; unknown ids (offline
+  // mock lines) degrade gracefully.
+  const who = (id: string) =>
+    byId[id] ?? { name: id.slice(0, 6), initials: id.slice(0, 2).toUpperCase(), color: "accent" };
   const roster = [...new Set(lines.flatMap((l) => l.splits.map((s) => s.userId)))];
 
   return (

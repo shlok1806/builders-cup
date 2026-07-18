@@ -38,9 +38,11 @@ export async function POST(req: Request) {
       recentNames,
     );
 
+    // Persist the prompt + skipped list as JSON so summary's parseSkippedItems
+    // can price the savings (raw `text` would parse to zero skipped → $0 saved).
     const purchaseId = await createBuildingPurchase({
       createdBy,
-      note: text,
+      note: JSON.stringify({ text, skipped }),
     });
     const { rows } = await insertPurchaseItems(purchaseId, items);
 
