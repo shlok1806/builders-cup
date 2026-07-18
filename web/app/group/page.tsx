@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Avatar, CartTab, CheckBadge, Clock, CountUp, Icon, ThemeToggle } from "@/components/ui";
+import { MemberCard, type CardData } from "@/components/MemberCard";
 import UserSwitcher from "@/components/UserSwitcher";
 import { useMe } from "@/lib/useMe";
 import { categories, household, money, people } from "@/lib/data";
@@ -33,6 +34,7 @@ export default function GroupDashboard() {
   const [editBudget, setEditBudget] = useState(false);
   const [budgetInput, setBudgetInput] = useState("");
   const [savingBudget, setSavingBudget] = useState(false);
+  const [myCard, setMyCard] = useState<CardData | null>(null);
 
   // Live numbers from /api/dashboard; keep the mock as the offline fallback so
   // the landing screen never renders empty.
@@ -65,6 +67,15 @@ export default function GroupDashboard() {
     fetch(`/api/approvals?user=${encodeURIComponent(me)}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error("bad status"))))
       .then((d) => setPending(d.pending?.length ?? 0))
+      .catch(() => {});
+  }, [me]);
+
+  // Your card — server-scoped to you; only ever your own.
+  useEffect(() => {
+    if (!me) return;
+    fetch(`/api/cards?user=${encodeURIComponent(me)}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("bad status"))))
+      .then((d) => setMyCard(d.cards?.[0] ?? null))
       .catch(() => {});
   }, [me]);
 
@@ -207,11 +218,22 @@ export default function GroupDashboard() {
           </div>
         </section>
 
+        {/* your card */}
+        {myCard && (
+          <section className="a-rise space-y-2.5" style={{ animationDelay: "90ms" }}>
+            <div className="flex items-center justify-between px-1">
+              <h2 className="font-display text-base font-bold tracking-tight text-ink">Your card</h2>
+              <Link href="/cards" className="press text-[13px] font-semibold text-accent-ink">Details ›</Link>
+            </div>
+            <MemberCard card={myCard} showBreakdown={false} />
+          </section>
+        )}
+
         {/* each person */}
         <section className="a-rise space-y-2.5" style={{ animationDelay: "120ms" }}>
           <div className="flex items-center justify-between px-1">
             <h2 className="font-display text-base font-bold tracking-tight text-ink">Each person&apos;s share</h2>
-            <Link href="/cards" className="press text-[13px] font-semibold text-accent-ink">Cards ›</Link>
+            <Link href="/history" className="press text-[13px] font-semibold text-accent-ink">See all ›</Link>
           </div>
           <div className="rounded-[22px] border border-line bg-surface px-4">
             {persons.map((p, i) => (
