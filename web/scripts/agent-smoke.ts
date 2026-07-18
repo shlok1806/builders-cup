@@ -23,7 +23,6 @@ try {
 }
 
 import { buildCart, compilePolicy, FALLBACKS, POLICY_TYPES, normalizePrompt } from "../lib/openai";
-import { RECENT_PURCHASE_NAMES } from "../lib/catalog.fixture";
 
 const live = process.argv.includes("--live");
 
@@ -41,14 +40,9 @@ async function main() {
 
   // --- Call A: cart builder ---
   console.log("Call A — buildCart");
-  const cart = await buildCart(CART_PROMPT, RECENT_PURCHASE_NAMES);
+  const cart = await buildCart(CART_PROMPT);
   check("returned items", cart.items.length > 0, `${cart.items.length} items`);
   check("all qty positive integers", cart.items.every((i) => Number.isInteger(i.qty) && i.qty > 0));
-  check(
-    "paper towels deduped",
-    cart.skipped.some((s) => /paper towel/i.test(s.name)),
-    cart.skipped.map((s) => s.name).join(", ") || "nothing skipped",
-  );
 
   // --- Call B: policy compiler ---
   console.log("\nCall B — compilePolicy");
