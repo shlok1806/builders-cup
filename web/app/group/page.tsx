@@ -211,7 +211,7 @@ export default function GroupDashboard() {
         <section className="a-rise space-y-2.5" style={{ animationDelay: "120ms" }}>
           <div className="flex items-center justify-between px-1">
             <h2 className="font-display text-base font-bold tracking-tight text-ink">Each person&apos;s share</h2>
-            <Link href="/history" className="press text-[13px] font-semibold text-accent-ink">See all ›</Link>
+            <Link href="/cards" className="press text-[13px] font-semibold text-accent-ink">Cards ›</Link>
           </div>
           <div className="rounded-[22px] border border-line bg-surface px-4">
             {persons.map((p, i) => (
