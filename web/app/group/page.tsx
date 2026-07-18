@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { Avatar, CheckBadge, Clock, CountUp, Icon, ThemeToggle } from "@/components/ui";
 import UserSwitcher from "@/components/UserSwitcher";
 import { useMe } from "@/lib/useMe";
-import { categories, household, money, people, totals } from "@/lib/data";
+import { categories, household, money, people } from "@/lib/data";
 
 // Literal class names so Tailwind generates them.
 const catBg: Record<string, string> = {
@@ -68,8 +68,8 @@ export default function GroupDashboard() {
       .catch(() => {});
   }, [me]);
 
-  const spent = dash ? dash.thisMonthCents / 100 : totals.spent;
-  const budget = dash ? dash.budgetCents / 100 : totals.budget;
+  const spent = dash ? dash.thisMonthCents / 100 : 0;
+  const budget = dash ? dash.budgetCents / 100 : 0;
   const left = budget - spent;
   const usedPct = budget ? Math.min(100, Math.round((spent / budget) * 100)) : 0;
   const overBudget = dash?.overBudget ?? false;
@@ -97,8 +97,8 @@ export default function GroupDashboard() {
         })
     : people.map((p) => ({ id: p.id, name: p.name, initials: p.initials, color: p.color, amount: p.share }));
 
-  const badge = pending ?? totals.needApproval;
-  const owed = dash ? dash.owedCents / 100 : totals.owed;
+  const badge = pending ?? 0;
+  const owed = dash ? dash.owedCents / 100 : 0;
   const allSquare = owed <= 0;
   const charged = dash ? dash.chargedUsers : persons.length;
   const chargedOf = dash ? dash.totalUsers : persons.length;
