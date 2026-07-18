@@ -20,6 +20,8 @@ async function wipe() {
     'restock_subscriptions',
     'scrape_runs',
     'purchases',
+    'recurring_cart_approvals',
+    'recurring_carts',
     'policies',
     'payment_methods',
     'products',
@@ -101,6 +103,18 @@ async function main() {
     .insert(catalog.map((c) => ({ ...c, canonical_key: canonicalKey(c.name, c.unit) })))
     .select('id, name, category, price_cents')
   const prod = (name: string) => products!.find((p) => p.name === name)!
+
+  // Recurring cart so the reorder + standing-verdict flow has something to run
+  // in the demo (settings "Reorder", /api/recurring, the approval device).
+  await db.from('recurring_carts').insert({
+    name: 'Weekly groceries',
+    owner_id: uid('Sam'),
+    household_id: householdId,
+    items: [
+      { product_id: prod('Bananas').id, qty: 2 },
+      { product_id: prod('Oat Milk').id, qty: 1 },
+    ],
+  })
 
   // Payment methods — real Stripe if a key is present, else placeholders (P4 swaps in).
   const stripeKey = process.env.STRIPE_SECRET_KEY

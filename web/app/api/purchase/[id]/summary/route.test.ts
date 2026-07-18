@@ -1,45 +1,24 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const summaryHarness = vi.hoisted(() => ({ admin: vi.fn() }))
+const harness = vi.hoisted(() => ({ admin: vi.fn(), savingsVsSecond: vi.fn() }))
 
-vi.mock('@/lib/supabase', () => ({ admin: summaryHarness.admin }))
-vi.mock('@/lib/payments', async () => import('../../../../../lib/payments'))
+vi.mock('@/lib/supabase', () => ({ admin: harness.admin }))
+vi.mock('@/lib/deals', () => ({ savingsVsSecond: harness.savingsVsSecond }))
 
 import { GET } from './route'
 
-type DatabaseResult = Record<string, unknown>
-type ScriptedTable = { table: string; query: unknown }
-
-function singleQuery(result: DatabaseResult) {
-  const query = {
-    select: vi.fn(),
-    eq: vi.fn(),
-    single: vi.fn().mockResolvedValue(result),
-  }
+// The route reads the purchase's line items, then sums the per-unit deal savings
+// (cheapest offer vs runner-up, via savingsVsSecond) across them. stepsCollapsed
+// is the fixed narrative integer (build -> split -> chase -> settle).
+function mockItems(items: { product_id: string | null; qty: number }[]) {
+  const query = { select: vi.fn(), eq: vi.fn() }
   query.select.mockReturnValue(query)
-  query.eq.mockReturnValue(query)
-  return query
-}
-
-function returnsQuery(result: DatabaseResult) {
-  const query = {
-    select: vi.fn(),
-    returns: vi.fn().mockResolvedValue(result),
-  }
-  query.select.mockReturnValue(query)
-  return query
-}
-
-function scriptAdmin(...tables: ScriptedTable[]) {
-  const remaining = [...tables]
+  query.eq.mockResolvedValue({ data: items, error: null })
   const from = vi.fn((table: string) => {
-    const next = remaining.shift()
-    if (!next || next.table !== table) {
-      throw new Error(`Unexpected table ${table}; expected ${next?.table ?? 'no further query'}`)
-    }
-    return next.query
+    if (table !== 'purchase_items') throw new Error(`Unexpected table ${table}; expected purchase_items`)
+    return query
   })
-  summaryHarness.admin.mockReturnValue({ from })
+  harness.admin.mockReturnValue({ from })
   return from
 }
 
@@ -51,56 +30,45 @@ function getSummary(purchaseId = 'purchase-7') {
 
 describe('GET /api/purchase/[id]/summary', () => {
   beforeEach(() => {
-    summaryHarness.admin.mockReset()
+    harness.admin.mockReset()
+    harness.savingsVsSecond.mockReset()
   })
 
-  it('computes saved cents from persisted skipped items and returns the fixed collapsed-step narrative', async () => {
-    scriptAdmin(
-      {
-        table: 'purchases',
-        query: singleQuery({
-          data: {
-            note: JSON.stringify({
-              skipped: [
-                { name: 'paper towels', price_cents: 899, reason: 'already stocked' },
-                { name: ' Sparkling Water ', reason: 'duplicate request' },
-              ],
-            }),
-          },
-          error: null,
-        }),
-      },
-      {
-        table: 'products',
-        query: returnsQuery({
-          data: [
-            { name: 'sparkling water', price_cents: 499 },
-            { name: 'unrelated product', price_cents: 9999 },
-          ],
-          error: null,
-        }),
-      },
-    )
+  it('sums per-unit deal savings across line items and returns the collapsed-step count', async () => {
+    mockItems([
+      { product_id: 'p-coffee', qty: 2 },
+      { product_id: 'p-chips', qty: 1 },
+    ])
+    harness.savingsVsSecond.mockImplementation(async (pid: string) => (pid === 'p-coffee' ? 150 : 40))
 
     const response = await getSummary()
 
     expect(response.status).toBe(200)
-    await expect(response.json()).resolves.toEqual({ savedCents: 1398, stepsCollapsed: 7 })
+    await expect(response.json()).resolves.toEqual({ savedCents: 340, dealSavingsCents: 340, stepsCollapsed: 4 })
   })
 
-  it.each([
-    { name: 'an absent note', note: null },
-    { name: 'a malformed note', note: '{not-json' },
-  ])('handles $name without inventing savings', async ({ note }) => {
-    const from = scriptAdmin({
-      table: 'purchases',
-      query: singleQuery({ data: { note }, error: null }),
-    })
+  it('computes each product only once even when it spans multiple lines', async () => {
+    mockItems([
+      { product_id: 'p-coffee', qty: 1 },
+      { product_id: 'p-coffee', qty: 3 },
+    ])
+    harness.savingsVsSecond.mockResolvedValue(100)
 
     const response = await getSummary()
 
-    expect(response.status).toBe(200)
-    await expect(response.json()).resolves.toEqual({ savedCents: 0, stepsCollapsed: 7 })
-    expect(from).toHaveBeenCalledTimes(1)
+    await expect(response.json()).resolves.toEqual({ savedCents: 400, dealSavingsCents: 400, stepsCollapsed: 4 })
+    expect(harness.savingsVsSecond).toHaveBeenCalledTimes(1)
+  })
+
+  it('ignores line items with no product and reports zero when nothing has a runner-up', async () => {
+    mockItems([
+      { product_id: null, qty: 5 },
+      { product_id: 'p-x', qty: 1 },
+    ])
+    harness.savingsVsSecond.mockResolvedValue(0)
+
+    const response = await getSummary()
+
+    await expect(response.json()).resolves.toEqual({ savedCents: 0, dealSavingsCents: 0, stepsCollapsed: 4 })
   })
 })
