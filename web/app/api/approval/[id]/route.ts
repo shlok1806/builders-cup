@@ -29,8 +29,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ ok: true })
   }
 
-  // Approving the final pending rule is the only path that can start checkout.
-  // The checkout service re-checks the pending count before it calls Stripe.
+  // The completion service re-checks the pending count before recording the purchase.
   const { error: approvalError } = await db.from('approvals').update({ status: 'approved' }).eq('id', id)
   if (approvalError) return NextResponse.json({ error: approvalError.message }, { status: 500 })
 
