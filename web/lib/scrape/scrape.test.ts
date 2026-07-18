@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { getForQuery, normalizeQuery } from './fixtures'
+import { getForQuery, normalizeQuery, synthesizeOffers } from './fixtures'
 import { serpapi } from './adapters/serpapi'
 
 // Swap the service-role client for an in-memory fake so the orchestrator can be
@@ -26,6 +26,23 @@ describe('getForQuery', () => {
 
   it('returns [] for an unknown prompt', () => {
     expect(getForQuery('caviar')).toEqual([])
+  })
+})
+
+describe('synthesizeOffers', () => {
+  it('is deterministic — same query yields the same offers', () => {
+    expect(synthesizeOffers('caviar')).toEqual(synthesizeOffers('caviar'))
+  })
+
+  it('yields 3 in-stock vendors at strictly ascending, distinct prices', () => {
+    const offers = synthesizeOffers('artisanal caviar')
+    expect(offers).toHaveLength(3)
+    expect(offers.every((o) => o.inStock)).toBe(true)
+    expect(new Set(offers.map((o) => o.vendor)).size).toBe(3)
+    const prices = offers.map((o) => o.priceCents)
+    expect(prices).toEqual([...prices].sort((a, b) => a - b))
+    expect(new Set(prices).size).toBe(3)
+    expect(offers[0].raw).toMatchObject({ synthetic: true })
   })
 })
 
@@ -151,14 +168,15 @@ describe('getOffers orchestrator', () => {
     expect(state.runs[0]).toMatchObject({ adapter: 'fixtures', status: 'ok', offer_count: 3 })
   })
 
-  it('records an ok run with zero offers for an unknown query', async () => {
+  it('synthesizes offers for an unknown query so the cart is never empty', async () => {
     const { db, state } = makeDb()
     h.db = db
 
     const inserted = await getOffers('caviar')
 
-    expect(inserted).toEqual([])
+    expect(inserted).toHaveLength(3) // deterministic synthetic vendors
+    expect(state.products.size).toBe(1) // all collapse to one canonical product
     expect(state.runs).toHaveLength(1)
-    expect(state.runs[0]).toMatchObject({ status: 'ok', offer_count: 0 })
+    expect(state.runs[0]).toMatchObject({ adapter: 'synthetic', status: 'ok', offer_count: 3 })
   })
 })
