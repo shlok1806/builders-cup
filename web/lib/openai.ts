@@ -161,6 +161,9 @@ export const FALLBACKS = {
 // Deterministic keyword compiler — the demo's safety net so policies compile
 // with NO OpenAI key and for phrasings not in the exact-match table above.
 // Order matters: threshold (has an amount) → weight (share/double) → exclude.
+// The fixed product categories a policy may exclude (matches the seeded catalog).
+const CATALOG_CATEGORIES = ["groceries", "meat", "alcohol", "household", "snacks", "cleaning"];
+
 const CATEGORY_WORDS: [RegExp, string][] = [
   [/alcohol|booze|beer|wine|liquor|tequila|vodka|whiskey|drinks?/, "alcohol"],
   [/meat|vegetarian|vegan|beef|steak|chicken|pork|bacon/, "meat"],
@@ -269,7 +272,9 @@ const POLICY_SYSTEM =
   "split_weight. Fill only the params relevant to that type: " +
   "exclude_category -> {category}; approval_threshold -> {amount_cents} " +
   "(integer cents); split_weight -> {weight} (integer). Leave the other " +
-  "params null. Return JSON only.";
+  "params null. For exclude_category, `category` MUST be exactly one of: " +
+  "groceries, meat, alcohol, household, snacks, cleaning (pick the closest). " +
+  "Return JSON only.";
 
 /** Tightens the flat params object into the canonical per-type shape. */
 function validatePolicyParams(
@@ -277,9 +282,17 @@ function validatePolicyParams(
   params: { category: string | null; amount_cents: number | null; weight: number | null },
 ): Record<string, unknown> {
   switch (type) {
-    case "exclude_category":
+    case "exclude_category": {
       if (!params.category) throw new Error("exclude_category needs a category");
-      return { category: params.category.toLowerCase() };
+      // Normalize to a catalog category so the exclusion actually fires at split
+      // time (map synonyms like beef->meat, wine->alcohol; drop unknowns).
+      const raw = params.category.toLowerCase();
+      const canon = CATALOG_CATEGORIES.includes(raw)
+        ? raw
+        : CATEGORY_WORDS.find(([re]) => re.test(raw))?.[1];
+      if (!canon) throw new Error(`unknown category: ${raw}`);
+      return { category: canon };
+    }
     case "approval_threshold":
       if (params.amount_cents == null || !Number.isInteger(params.amount_cents))
         throw new Error("approval_threshold needs integer amount_cents");
