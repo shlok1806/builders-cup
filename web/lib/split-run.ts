@@ -1,5 +1,6 @@
 import { admin } from './supabase'
 import { computeSplit } from './split'
+import { applyStandingDecisions, type StandingMap } from './standing'
 import type { Member, Line } from './types'
 
 // Shared split logic — called by POST /api/purchase/[id]/split and by the
@@ -21,7 +22,7 @@ export async function runSplit(purchaseId: string): Promise<SplitLineView[]> {
 
   const { data: purchase } = await db
     .from('purchases')
-    .select('id, household_id')
+    .select('id, household_id, recurring_cart_id')
     .eq('id', purchaseId)
     .single()
   if (!purchase) throw new Error(`purchase ${purchaseId} not found`)
@@ -67,12 +68,29 @@ export async function runSplit(purchaseId: string): Promise<SplitLineView[]> {
 
   const { allocations, flagged } = computeSplit(lines, members)
 
+  // Recurring cart? Fold in the approvers' standing verdicts.
+  let standing: StandingMap = {}
+  if (purchase.recurring_cart_id && flagged.length) {
+    const { data: rows } = await db
+      .from('recurring_cart_approvals')
+      .select('approver_id, decision')
+      .eq('recurring_cart_id', purchase.recurring_cart_id)
+      .in('approver_id', flagged.map((f) => f.approverId))
+    standing = Object.fromEntries((rows ?? []).map((r) => [r.approver_id, r.decision])) as StandingMap
+  }
+  const { pending, autoApproved, dropItemIds } = applyStandingDecisions(flagged, standing)
+  const dropSet = new Set(dropItemIds)
+
   // Rewrite item_splits for these items (idempotent re-run).
   const itemIds = itemRows.map((it) => it.id)
   if (itemIds.length) await db.from('item_splits').delete().in('purchase_item_id', itemIds)
-  if (allocations.length)
+  // 'never' verdict: delete the flagged item (cascades its splits + approvals) and
+  // never insert its allocations. Per-line independence means other lines are unaffected.
+  if (dropItemIds.length) await db.from('purchase_items').delete().in('id', dropItemIds)
+  const keptAllocations = allocations.filter((a) => !dropSet.has(a.itemId))
+  if (keptAllocations.length)
     await db.from('item_splits').insert(
-      allocations.map((a) => ({
+      keptAllocations.map((a) => ({
         purchase_item_id: a.itemId,
         user_id: a.userId,
         amount_cents: a.amountCents,
@@ -81,25 +99,39 @@ export async function runSplit(purchaseId: string): Promise<SplitLineView[]> {
 
   // Replace pending approvals (keep approved/declined history untouched).
   await db.from('approvals').delete().eq('purchase_id', purchaseId).eq('status', 'pending')
-  if (flagged.length)
+  const toInsert = [
+    ...pending.map((f) => ({ ...f, status: 'pending' as const })),
+    // 'always' verdict: record an approved row so there's an audit trail per run.
+    ...autoApproved.map((f) => ({ ...f, status: 'approved' as const })),
+  ]
+  if (toInsert.length)
     await db.from('approvals').insert(
-      flagged.map((f) => ({
+      toInsert.map((f) => ({
         purchase_id: purchaseId,
         purchase_item_id: f.itemId,
         approver_id: f.approverId,
         rule: f.rule,
-        status: 'pending',
+        status: f.status,
       }))
     )
 
   await db
     .from('purchases')
-    .update({ status: flagged.length ? 'awaiting_approval' : 'building' })
+    .update({ status: pending.length ? 'awaiting_approval' : 'building' })
     .eq('id', purchaseId)
 
+  if (dropItemIds.length) {
+    const { data: kept } = await db
+      .from('purchase_items')
+      .select('qty, unit_price_cents')
+      .eq('purchase_id', purchaseId)
+    const subtotal = (kept ?? []).reduce((s, it) => s + it.unit_price_cents * it.qty, 0)
+    await db.from('purchases').update({ subtotal_cents: subtotal }).eq('id', purchaseId)
+  }
+
   // Assemble the split-view payload (join names + flags).
-  const flagByItem = new Map(flagged.map((f) => [f.itemId, f]))
-  return itemRows.map((it) => {
+  const flagByItem = new Map(pending.map((f) => [f.itemId, f]))
+  return itemRows.filter((it) => !dropSet.has(it.id)).map((it) => {
     const f = flagByItem.get(it.id)
     return {
       itemId: it.id,
