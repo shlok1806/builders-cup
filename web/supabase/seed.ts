@@ -102,35 +102,6 @@ async function main() {
     .select('id, name, category, price_cents')
   const prod = (name: string) => products!.find((p) => p.name === name)!
 
-  // Multi-vendor offers per product — the cheapest is the product's reference
-  // price, with pricier runners-up so "cheapest of N" and the savings number are
-  // real. deals.bestOffer / savingsVsSecond read these.
-  const OFFER_VENDORS = ['Walmart', 'Target', 'Amazon'] as const
-  const offerRows = catalog.flatMap((c) => {
-    const base = c.price_cents
-    const ladder = [base, Math.round(base * 1.1), Math.round(base * 1.18)]
-    return OFFER_VENDORS.map((vendor, i) => ({
-      product_id: prod(c.name).id,
-      vendor,
-      url: null,
-      price_cents: ladder[i],
-      unit: c.unit,
-      in_stock: true,
-    }))
-  })
-  await db.from('offers').insert(offerRows)
-
-  // Restock subscriptions — the autonomous agent's watchlist. Coffee + paper
-  // towels are backdated so they fall "due" within the 7-day horizon; dish soap
-  // is a longer cadence bought recently, so the agent correctly leaves it out.
-  const dayISO = (d: number) =>
-    new Date(Date.now() - d * 24 * 60 * 60 * 1000).toISOString()
-  await db.from('restock_subscriptions').insert([
-    { household_id: householdId, product_id: prod('Coffee').id, cadence_days: 14, lead_days: 2, last_purchased_at: dayISO(13) },
-    { household_id: householdId, product_id: prod('Paper Towels').id, cadence_days: 10, lead_days: 2, last_purchased_at: dayISO(6) },
-    { household_id: householdId, product_id: prod('Dish Soap').id, cadence_days: 30, lead_days: 2, last_purchased_at: dayISO(6) },
-  ])
-
   // Payment methods — real Stripe if a key is present, else placeholders (P4 swaps in).
   const stripeKey = process.env.STRIPE_SECRET_KEY
   for (const u of users!) {

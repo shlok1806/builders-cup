@@ -1,33 +1,19 @@
 {
-  "name": "cartel-next",
-  "version": "0.1.0",
+  "name": "cartel-root",
   "private": true,
+  "//": "Delegator only — the app lives in web/. Do NOT add deps or app/lib here.",
   "scripts": {
-    "dev": "next dev",
-    "dev:mobile": "next dev -H 0.0.0.0",
-    "build": "next build",
-    "start": "next start",
-    "start:mobile": "next start -H 0.0.0.0",
-    "lint": "eslint"
+    "dev": "npm --prefix web run dev",
+    "dev:mobile": "npm --prefix web run dev:mobile",
+    "build": "npm --prefix web run build",
+    "start:mobile": "npm --prefix web run start:mobile",
+    "test": "npm --prefix web run test",
+    "seed": "npm --prefix web run seed",
+    "smoke": "npm --prefix web run smoke",
+    "lint": "npm --prefix web run lint"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.110.7",
-    "next": "16.2.10",
-    "openai": "^6.48.0",
-    "react": "19.2.4",
-    "react-dom": "19.2.4",
-    "stripe": "^22.3.2"
-  },
-  "devDependencies": {
-    "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "eslint": "^9",
-    "eslint-config-next": "16.2.10",
-    "tailwindcss": "^4",
-    "tsx": "^4.23.1",
-    "typescript": "^5",
-    "vitest": "^4.1.10"
+    "@supabase/ssr": "^0.12.3",
+    "@supabase/supabase-js": "^2.110.7"
   }
 }
