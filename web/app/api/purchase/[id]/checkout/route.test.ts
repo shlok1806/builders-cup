@@ -359,7 +359,7 @@ describe('POST /api/purchase/[id]/checkout', () => {
     await expect(response.json()).resolves.toEqual({
       charges: [
         { userId: 'priya', amountCents: 499, status: 'succeeded', stripePaymentIntentId: 'pi_priya' },
-        { userId: 'sam', amountCents: 1505, status: 'failed', stripePaymentIntentId: null },
+        { userId: 'sam', amountCents: 1505, status: 'failed', stripePaymentIntentId: null, failureMessage: 'Stripe could not complete the payment' },
       ],
     })
     expect(ledgerInsert.insert).toHaveBeenCalledWith([

@@ -82,6 +82,7 @@ describe('chargeUser', () => {
     await expect(chargeUser('cus_sam', 'pm_visa', 1505, 'purchase-7:sam:1505')).resolves.toEqual({
       piId: null,
       status: 'failed',
+      failureMessage: error.message,
     })
   })
 })
