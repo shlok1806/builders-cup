@@ -1,169 +1,200 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Icon } from "@/components/ui";
-import CartInput from "@/components/CartInput";
-import CartView from "@/components/CartView";
-import SplitView from "@/components/SplitView";
-import SavingsCard from "@/components/SavingsCard";
-import { mockCart, mockSplitLines, type CartResult } from "@/lib/data";
-import { useMe } from "@/lib/useMe";
-import type { SplitLineView } from "@/lib/split-run";
+import { money } from "@/lib/data";
 
-type Charge = { userId: string; amountCents: number; status: "succeeded" | "failed" };
-type Summary = { savedCents: number; stepsCollapsed: number };
+// F2/F4/F8 UI — drives the whole scraper pipeline: build a cart from free text,
+// see each line sourced to the cheapest vendor ("cheapest of N"), split it, and
+// read the savings. The autonomous weekly restock is one tap and always lands on
+// the approval screen — it never charges here.
 
-// F2/F4/F8 — build cart → split → (await approval) → checkout → savings.
-// Wires P2/P3/P4 routes; falls back to seed data so it demos offline.
+const DEMO_PROMPT = "restock + snacks for Friday";
+const cents = (c: number) => money(c / 100);
+
+type BuiltItem = {
+  id: string;
+  name: string;
+  qty: number;
+  category: string;
+  unit_price_cents: number;
+  vendor: string;
+  url: string | null;
+  offersCount: number;
+  runnerUpCents: number | null;
+};
+type BuildResp = {
+  purchaseId: string;
+  items: BuiltItem[];
+  skipped: { name: string; reason: string }[];
+  dealsCompared: number;
+};
+type SplitLine = {
+  itemId: string;
+  name: string;
+  category: string;
+  lineTotalCents: number;
+  splits: { userId: string; amountCents: number }[];
+  flag?: { approverId: string; rule: string };
+};
+
 export default function CartPage() {
-  const { me } = useMe();
-  const [cart, setCart] = useState<CartResult | null>(null);
-  const [lines, setLines] = useState<SplitLineView[] | null>(null);
-  const [charges, setCharges] = useState<Charge[] | null>(null);
-  const [summary, setSummary] = useState<Summary | null>(null);
-  const [cleared, setCleared] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [build, setBuild] = useState<BuildResp | null>(null);
+  const [lines, setLines] = useState<SplitLine[] | null>(null);
+  const [saved, setSaved] = useState<number | null>(null);
+  const [auto, setAuto] = useState<string | null>(null);
 
-  const build = async (text: string) => {
-    setBusy(true);
-    try {
-      const r = await fetch("/api/cart/build", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ text, userId: me }),
-      });
-      setCart(r.ok ? await r.json() : mockCart);
-    } catch {
-      setCart(mockCart); // model/route down → canonical demo cart
-    } finally {
-      setBusy(false);
-    }
-  };
+  async function runBuild(prompt: string) {
+    setBusy("Sourcing best deals…");
+    setBuild(null); setLines(null); setSaved(null); setAuto(null);
+    const r = await fetch("/api/cart/build", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: prompt }),
+    });
+    setBuild(await r.json());
+    setBusy(null);
+  }
 
-  const split = async () => {
-    if (!cart) return;
-    setBusy(true);
-    try {
-      const r = await fetch(`/api/purchase/${cart.purchaseId}/split`, { method: "POST" });
-      const j = r.ok ? await r.json() : null;
-      setLines(j?.lines ?? mockSplitLines);
-    } catch {
-      setLines(mockSplitLines);
-    } finally {
-      setBusy(false);
-    }
-  };
+  async function runSplitAndSummary() {
+    if (!build) return;
+    setBusy("Splitting by everyone's rules…");
+    const s = await fetch(`/api/purchase/${build.purchaseId}/split`, { method: "POST" });
+    setLines((await s.json()).lines);
+    const sum = await fetch(`/api/purchase/${build.purchaseId}/summary`);
+    setSaved((await sum.json()).savedCents);
+    setBusy(null);
+  }
 
-  const flagged = lines?.some((l) => l.flag) ?? false;
-  const approvers = [...new Set((lines ?? []).flatMap((l) => (l.flag ? [l.flag.approverId] : [])))];
-
-  // Poll approvals while a flag blocks checkout; clear once none pending for this
-  // purchase (approval landed on the device). No flag → nothing to wait on.
-  useEffect(() => {
-    if (!cart || !lines || !flagged || cleared) return;
-    let alive = true;
-    const check = async () => {
-      try {
-        const results = await Promise.all(
-          approvers.map((a) =>
-            fetch(`/api/approvals?user=${encodeURIComponent(a)}`, { cache: "no-store" })
-              .then((r) => (r.ok ? r.json() : { pending: [] })),
-          ),
-        );
-        const stillPending = results.some((j) =>
-          (j.pending ?? []).some((p: { purchaseId?: string }) => p.purchaseId === cart.purchaseId),
-        );
-        if (alive && !stillPending) setCleared(true);
-      } catch {}
-    };
-    check();
-    const t = setInterval(check, 1500);
-    return () => { alive = false; clearInterval(t); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cart, lines, flagged, cleared]);
-
-  // Offline fallback: sum split lines per user so the money-shot still lands.
-  const mockCharges = (): Charge[] => {
-    const totals = new Map<string, number>();
-    for (const l of lines ?? []) for (const s of l.splits) totals.set(s.userId, (totals.get(s.userId) ?? 0) + s.amountCents);
-    return [...totals.entries()].map(([userId, amountCents]) => ({ userId, amountCents, status: "succeeded" as const }));
-  };
-
-  const checkout = async () => {
-    if (!cart) return;
-    setBusy(true);
-    try {
-      const r = await fetch(`/api/purchase/${cart.purchaseId}/checkout`, { method: "POST" });
-      if (r.status === 409) return; // still pending → stay in the awaiting state
-      const j = r.ok ? await r.json() : { charges: mockCharges() };
-      setCharges(j.charges?.length ? j.charges : mockCharges());
-      try {
-        const s = await fetch(`/api/purchase/${cart.purchaseId}/summary`);
-        setSummary(s.ok ? await s.json() : { savedCents: 1800, stepsCollapsed: 7 });
-      } catch {
-        setSummary({ savedCents: 1800, stepsCollapsed: 7 });
-      }
-    } catch {
-      setCharges(mockCharges());
-      setSummary({ savedCents: 1800, stepsCollapsed: 7 });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const awaiting = flagged && !cleared;
-  const title = !cart ? "New cart" : charges ? "All charged" : lines ? "The split" : "Your cart";
+  async function runAuto() {
+    setBusy("Agent checking what's running low…");
+    setBuild(null); setLines(null); setSaved(null);
+    const r = await fetch("/api/auto-restock", { method: "POST" });
+    const j = await r.json();
+    setAuto(j.purchaseId ? `Drafted ${j.lineCount} items ($${(j.subtotalCents / 100).toFixed(2)}) — awaiting approval` : "Nothing due this week");
+    setBusy(null);
+  }
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-[440px] flex-col bg-bg">
-      <header className="flex items-center gap-3 px-5 pt-5 pb-3">
-        <Link href="/" className="press grid h-9 w-9 place-items-center rounded-full border border-line bg-surface text-ink-soft">
-          <Icon name="home" size={18} />
-        </Link>
-        <h1 className="font-display text-lg font-bold tracking-tight text-ink">{title}</h1>
+      <header className="flex items-center justify-between px-5 pt-6 pb-3">
+        <div className="flex items-center gap-2.5">
+          <Link href="/" className="press grid h-[38px] w-[38px] place-items-center rounded-full border border-line bg-surface text-ink-soft">
+            <Icon name="home" size={18} />
+          </Link>
+          <h1 className="font-display text-lg font-bold tracking-tight text-ink">Build a cart</h1>
+        </div>
+        <button onClick={runAuto} className="press rounded-full border border-line bg-surface px-3 py-2 text-[12px] font-semibold text-accent-ink">
+          Auto-restock ▸
+        </button>
       </header>
 
       <main className="flex-1 space-y-4 px-5 pb-28 pt-1">
-        {!cart && <CartInput onBuild={build} loading={busy} />}
-        {cart && !lines && <CartView cart={cart} />}
-        {lines && !charges && <SplitView lines={lines} />}
-        {charges && (
-          <SavingsCard savedCents={summary?.savedCents ?? 0} stepsCollapsed={summary?.stepsCollapsed} charges={charges} />
+        {/* input */}
+        <section className="a-rise rounded-[22px] border border-line bg-surface p-4" style={{ animationDelay: "40ms" }}>
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="e.g. restock the apartment and snacks for Friday"
+            rows={2}
+            className="w-full resize-none bg-transparent text-[15px] font-medium text-ink outline-none placeholder:text-ink-faint"
+          />
+          <div className="mt-3 flex items-center gap-2">
+            <button onClick={() => { setText(DEMO_PROMPT); runBuild(DEMO_PROMPT); }} className="press rounded-full bg-surface-2 px-3 py-1.5 text-[12px] font-semibold text-ink-soft">
+              “{DEMO_PROMPT}”
+            </button>
+            <button onClick={() => runBuild(text)} disabled={!text || !!busy} className="press ml-auto rounded-full bg-accent px-4 py-2 text-[13px] font-semibold text-on-accent disabled:opacity-40">
+              Build
+            </button>
+          </div>
+        </section>
+
+        {busy && <p className="px-1 text-[13px] font-medium text-ink-soft">{busy}</p>}
+        {auto && (
+          <div className="a-rise flex items-center gap-2 rounded-2xl border border-line bg-warn-soft px-4 py-3 text-[13px] font-semibold text-ink">
+            <span className="rounded-full bg-warn px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">Due this week</span>
+            <Link href="/approve?user=sam" className="text-accent-ink">{auto}</Link>
+          </div>
+        )}
+
+        {/* built cart */}
+        {build && (
+          <section className="a-rise space-y-2.5" style={{ animationDelay: "80ms" }}>
+            <div className="flex items-center justify-between px-1">
+              <h2 className="font-display text-base font-bold tracking-tight text-ink">Cart</h2>
+              <span className="text-[12px] font-medium text-ink-faint">compared {build.dealsCompared} offers</span>
+            </div>
+            <div className="rounded-[22px] border border-line bg-surface px-4">
+              {build.items.map((it, i) => (
+                <div key={it.id} className={`flex items-center gap-3 py-[13px] ${i < build.items.length - 1 ? "border-b border-line" : ""}`}>
+                  <div className="min-w-0 leading-tight">
+                    <div className="truncate text-sm font-semibold text-ink">{it.qty}× {it.name}</div>
+                    <div className="mt-0.5 flex items-center gap-1.5 text-[11.5px] font-medium text-ink-faint">
+                      <span className="rounded bg-surface-2 px-1.5 py-0.5 text-positive">{it.vendor}</span>
+                      {it.offersCount > 1 && <span>cheapest of {it.offersCount}</span>}
+                    </div>
+                  </div>
+                  <div className="ml-auto text-right leading-tight">
+                    <div className="font-display text-[15px] font-bold tabular-nums text-ink">{cents(it.unit_price_cents)}</div>
+                    {it.runnerUpCents != null && it.runnerUpCents > it.unit_price_cents && (
+                      <div className="text-[11px] font-medium text-ink-faint line-through tabular-nums">{cents(it.runnerUpCents)}</div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+            {build.skipped.length > 0 && (
+              <div className="rounded-2xl border border-line bg-surface-2 px-4 py-3">
+                {build.skipped.map((s) => (
+                  <div key={s.name} className="flex items-center gap-2 text-[12.5px] font-medium text-ink-soft">
+                    <Icon name="x" size={13} /> Skipped {s.name} — {s.reason}
+                  </div>
+                ))}
+              </div>
+            )}
+            <button onClick={runSplitAndSummary} disabled={!!busy} className="press w-full rounded-2xl bg-accent py-3 text-[14px] font-semibold text-on-accent disabled:opacity-40">
+              Split by everyone&apos;s rules
+            </button>
+          </section>
+        )}
+
+        {/* split view */}
+        {lines && (
+          <section className="a-rise space-y-2.5" style={{ animationDelay: "40ms" }}>
+            <h2 className="px-1 font-display text-base font-bold tracking-tight text-ink">Split</h2>
+            <div className="space-y-2">
+              {lines.map((l) => (
+                <div key={l.itemId} className="rounded-2xl border border-line bg-surface px-4 py-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold text-ink">{l.name}</span>
+                    <span className="font-display text-[14px] font-bold tabular-nums text-ink">{cents(l.lineTotalCents)}</span>
+                  </div>
+                  <div className="mt-1 text-[11.5px] font-medium text-ink-faint">
+                    {l.splits.length} paying · {cents(Math.round(l.lineTotalCents / Math.max(1, l.splits.length)))} avg
+                  </div>
+                  {l.flag && (
+                    <div className="mt-2 rounded-lg bg-warn-soft px-2.5 py-1.5 text-[11.5px] font-semibold text-ink">
+                      ⚑ Flagged — {l.flag.rule}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* savings */}
+        {saved != null && (
+          <section className="a-rise rounded-[22px] border border-line bg-positive-soft p-5 text-center" style={{ animationDelay: "80ms" }}>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.1em] text-positive">Agent saved you</div>
+            <div className="mt-1 font-display text-[36px] font-bold leading-none tabular-nums text-ink">{cents(saved)}</div>
+            <div className="mt-1.5 text-[12.5px] font-medium text-ink-soft">by sourcing the cheapest vendor on every line</div>
+          </section>
         )}
       </main>
-
-      {cart && !lines && (
-        <Footer>
-          <button onClick={split} disabled={busy} className="press flex w-full items-center justify-center gap-2 rounded-2xl bg-accent py-4 text-[15.5px] font-semibold text-on-accent disabled:opacity-45">
-            <Icon name="split" size={19} />
-            {busy ? "Splitting…" : "Split it"}
-          </button>
-        </Footer>
-      )}
-
-      {lines && !charges && (
-        <Footer>
-          {awaiting && (
-            <p className="mb-2.5 flex items-center justify-center gap-1.5 text-[12.5px] font-semibold text-warn">
-              <Icon name="lock" size={14} strokeWidth={2.2} />
-              Awaiting approval…
-            </p>
-          )}
-          <button onClick={checkout} disabled={busy || awaiting} className="press flex w-full items-center justify-center gap-2 rounded-2xl bg-accent py-4 text-[15.5px] font-semibold text-on-accent disabled:opacity-45">
-            <Icon name="check" size={19} strokeWidth={2.6} />
-            {busy ? "Charging…" : awaiting ? "Blocked until approved" : "Check out"}
-          </button>
-        </Footer>
-      )}
-    </div>
-  );
-}
-
-function Footer({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="fixed bottom-0 left-1/2 w-full max-w-[440px] -translate-x-1/2 border-t border-line bg-surface px-5 pt-3 pb-8">
-      {children}
     </div>
   );
 }
