@@ -67,7 +67,7 @@ export default function Settings() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ userId: me }),
       });
-      if (r.ok) { window.location.href = "/cart"; return; }
+      if (r.ok) { window.location.assign("/cart"); return; }
       setErr("Couldn't reorder that cart.");
     } catch { setErr("Couldn't reach the server."); } finally { setReorderBusy(null); }
   };

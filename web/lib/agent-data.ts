@@ -8,14 +8,19 @@
 
 import { admin } from './supabase'
 
-const db = admin()
+// Lazily-initialized service-role client. Must NOT run at module load: route
+// files that import this get their page data collected during `next build`,
+// where Supabase env vars are absent and `admin()` would throw
+// "supabaseUrl is required". Memoized so we still reuse one client per process.
+let _db: ReturnType<typeof admin> | null = null
+const db = () => (_db ??= admin())
 
 const isUuid = (s: string) =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s)
 
 /** The demo has exactly one household; resolve its id once per call. */
 async function resolveHousehold(): Promise<string> {
-  const { data, error } = await db.from('households').select('id').limit(1).single()
+  const { data, error } = await db().from('households').select('id').limit(1).single()
   if (error || !data) throw new Error('no household seeded — run `npm run seed`')
   return data.id
 }
@@ -52,7 +57,7 @@ export type PolicyRow = {
 
 /** Full catalog the cart builder is constrained to. */
 export async function getCatalog(): Promise<CatalogEntry[]> {
-  const { data, error } = await db.from('products').select('id, name, category, price_cents')
+  const { data, error } = await db().from('products').select('id, name, category, price_cents')
   if (error) throw new Error(error.message)
   return data ?? []
 }
@@ -64,7 +69,7 @@ export async function getCatalog(): Promise<CatalogEntry[]> {
 export async function getRecentPurchaseNames(): Promise<string[]> {
   const householdId = await resolveHousehold()
   const cutoff = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString()
-  const { data, error } = await db
+  const { data, error } = await db()
     .from('purchase_items')
     .select('name, purchases!inner(household_id, created_at)')
     .eq('purchases.household_id', householdId)
@@ -82,7 +87,7 @@ export async function createBuildingPurchase(input: {
   note: string
 }): Promise<string> {
   const householdId = await resolveHousehold()
-  const { data, error } = await db
+  const { data, error } = await db()
     .from('purchases')
     .insert({
       household_id: householdId,
@@ -109,7 +114,7 @@ export async function insertPurchaseItems(
 ): Promise<{ rows: PurchaseItemRow[]; subtotalCents: number }> {
   if (items.length === 0) return { rows: [], subtotalCents: 0 }
 
-  const { data: products, error: prodErr } = await db
+  const { data: products, error: prodErr } = await db()
     .from('products')
     .select('id, name, category, price_cents')
     .in(
@@ -134,14 +139,14 @@ export async function insertPurchaseItems(
     })
     .filter((r): r is NonNullable<typeof r> => r !== null)
 
-  const { data: rows, error: insErr } = await db
+  const { data: rows, error: insErr } = await db()
     .from('purchase_items')
     .insert(toInsert)
     .select('id, purchase_id, product_id, name, qty, unit_price_cents, category')
   if (insErr) throw new Error(insErr.message)
 
   const subtotalCents = (rows ?? []).reduce((s, r) => s + r.unit_price_cents * r.qty, 0)
-  await db.from('purchases').update({ subtotal_cents: subtotalCents }).eq('id', purchaseId)
+  await db().from('purchases').update({ subtotal_cents: subtotalCents }).eq('id', purchaseId)
 
   return { rows: (rows ?? []) as PurchaseItemRow[], subtotalCents }
 }
@@ -155,7 +160,7 @@ export async function insertPolicy(input: {
   source_text: string
 }): Promise<PolicyRow> {
   const householdId = await resolveHousehold()
-  const { data, error } = await db
+  const { data, error } = await db()
     .from('policies')
     .insert({
       user_id: input.userId,
