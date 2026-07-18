@@ -1,6 +1,5 @@
 // Seed — locks the demo numbers (architecture.md §12). Idempotent wipe-and-reinsert.
-// Run: `npm run seed` (loads .env.local). Stripe PMs are P4's part — guarded on
-// STRIPE_SECRET_KEY so P3 can seed + verify without it (placeholder PM rows).
+// Run: npm run seed (loads .env.local).
 import { admin } from '../lib/supabase'
 import { computeSplit } from '../lib/split'
 import { canonicalKey } from '../lib/dedupe'
@@ -116,28 +115,6 @@ async function main() {
     ],
   })
 
-  // Payment methods — real Stripe if a key is present, else placeholders (P4 swaps in).
-  const stripeKey = process.env.STRIPE_SECRET_KEY
-  for (const u of users!) {
-    let customer = `seed_cus_${u.name.toLowerCase()}`
-    let pm = `seed_pm_${u.name.toLowerCase()}`
-    if (stripeKey) {
-      const Stripe = (await import('stripe')).default
-      const stripe = new Stripe(stripeKey)
-      const c = await stripe.customers.create({ name: u.name })
-      const attached = await stripe.paymentMethods.attach('pm_card_visa', { customer: c.id })
-      await stripe.customers.update(c.id, { invoice_settings: { default_payment_method: attached.id } })
-      customer = c.id
-      pm = attached.id
-    }
-    await db.from('payment_methods').insert({
-      user_id: u.id,
-      stripe_customer_id: customer,
-      stripe_pm_id: pm,
-      last4: '4242',
-      brand: 'visa',
-    })
-  }
 
   // Members for computing prior-purchase splits (mirror the seeded policies).
   const members: Member[] = [
@@ -226,7 +203,7 @@ async function main() {
     users: users!.length,
     products: products!.length,
     priorPurchases: priors.length,
-    stripe: stripeKey ? 'real' : 'placeholder',
+    completion: 'internal',
   })
 }
 
