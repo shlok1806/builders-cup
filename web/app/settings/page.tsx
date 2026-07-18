@@ -25,6 +25,7 @@ export default function Settings() {
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
   const [carts, setCarts] = useState<{ id: string; name: string; decision: "always" | "ask" | "never" }[]>([]);
   const meName = users.find((u) => u.id === me)?.name ?? "you";
 
@@ -68,6 +69,7 @@ export default function Settings() {
     const t = text.trim();
     if (!t || !me) return;
     setBusy(true);
+    setErr("");
     try {
       const r = await fetch("/api/policy/compile", {
         method: "POST",
@@ -75,7 +77,8 @@ export default function Settings() {
         body: JSON.stringify({ userId: me, text: t }),
       });
       if (r.ok) { setText(""); await load(); }
-    } catch {} finally { setBusy(false); }
+      else setErr((await r.json().catch(() => ({}))).error ?? "Couldn't save that rule.");
+    } catch { setErr("Couldn't reach the server."); } finally { setBusy(false); }
   };
 
   return (
@@ -148,6 +151,7 @@ export default function Settings() {
             <Icon name="plus" size={18} strokeWidth={2.4} />
             {busy ? "Compiling…" : "Add rule"}
           </button>
+          {err && <p className="mt-2 text-[12px] font-medium text-red-500">{err}</p>}
         </section>
       </main>
     </div>
