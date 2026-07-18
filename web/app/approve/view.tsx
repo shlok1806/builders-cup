@@ -30,28 +30,39 @@ function Device() {
   const [decision, setDecision] = useState<null | "approved" | "declined">(null);
   const [standing, setStanding] = useState<'always' | 'ask' | 'never'>('ask');
   const [chargedCents, setChargedCents] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const decide = async (d: "approved" | "declined") => {
-    setDecision(d);
-    if (latest) {
-      setChargedCents(latest.amountCents); // capture before refresh() clears `latest`
-      try {
-        await fetch(`/api/approval/${latest.id}`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ decision: d }),
-        });
-      } catch {}
+    if (!latest) return;
+    setError(null);
+    try {
+      const response = await fetch(`/api/approval/${latest.id}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ decision: d }),
+      });
+      const body = await response.json() as {
+        error?: string;
+        charges?: { userId: string; amountCents: number; status: "succeeded" | "failed" }[];
+      };
+      if (!response.ok) throw new Error(body.error ?? "Could not save your decision");
+
+      setChargedCents(
+        d === "approved"
+          ? body.charges?.find((charge) => charge.userId === latest.approverId && charge.status === "succeeded")?.amountCents ?? null
+          : null,
+      );
+      setDecision(d);
       if (latest.recurringCartId && standing !== 'ask') {
-        try {
-          await fetch(`/api/recurring/${latest.recurringCartId}/decision`, {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ approverId: latest.approverId, decision: standing }),
-          });
-        } catch {}
+        await fetch(`/api/recurring/${latest.recurringCartId}/decision`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ approverId: latest.approverId, decision: standing }),
+        });
       }
       refresh();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Could not save your decision");
     }
   };
 
@@ -76,7 +87,9 @@ function Device() {
           </h1>
           <p className="mt-2 text-[15px] font-medium text-ink-soft">
             {approved
-              ? `Your ${money((chargedCents ?? Math.round(seed.yourShare * 100)) / 100)} share was charged. The cart is unblocked.`
+              ? chargedCents !== null
+                ? `Your ${money(chargedCents / 100)} share was charged. The purchase is in history.`
+                : "Your approval was recorded. The purchase will not appear in history until every payment succeeds."
               : "Removed from the cart. Everyone will be notified."}
           </p>
         </div>
@@ -115,6 +128,7 @@ function Device() {
           </div>
         </div>
       )}
+      {error && <p role="alert" className="px-6 pb-2 text-center text-[13px] font-medium text-warn">{error}</p>}
       <ApprovalCard a={a} onDecide={decide} />
     </div>
   );

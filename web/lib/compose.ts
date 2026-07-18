@@ -54,6 +54,7 @@ export async function monthSpendCents(
     .from('item_splits')
     .select('amount_cents, purchase_items!inner(purchases!inner(household_id, created_at))')
     .eq('purchase_items.purchases.household_id', householdId)
+    .eq('purchase_items.purchases.status', 'charged')
     .gte('purchase_items.purchases.created_at', monthStart)
   return ((data ?? []) as { amount_cents: number }[]).reduce((s, r) => s + r.amount_cents, 0)
 }
