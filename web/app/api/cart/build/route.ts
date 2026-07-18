@@ -69,9 +69,19 @@ export async function POST(req: Request) {
       purchaseId = purchase!.id as string
     }
 
+    // Resolve each line's canonical product name (e.g. "Starbucks Pike Place
+    // Ground Coffee 28 oz") so the cart shows the actual item sourced, not the
+    // generic request term ("coffee"). Falls back to the seed name if missing.
+    const productIds = [...new Set(plan.lines.map((l) => l.best.product_id))]
+    const { data: prods } = productIds.length
+      ? await db.from('products').select('id, name').in('id', productIds)
+      : { data: [] as { id: string; name: string }[] }
+    const nameById = new Map((prods ?? []).map((p) => [p.id as string, p.name as string]))
+
     const items: {
       id: string
       name: string
+      productName: string
       qty: number
       category: string
       unit_price_cents: number
@@ -100,6 +110,7 @@ export async function POST(req: Request) {
       items.push({
         id: row!.id as string,
         name: line.name,
+        productName: nameById.get(line.best.product_id) ?? line.name,
         qty: line.qty,
         category: line.category,
         unit_price_cents: line.best.price_cents,

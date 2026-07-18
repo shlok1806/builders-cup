@@ -14,6 +14,7 @@ const PATHS: Record<string, React.ReactNode> = {
   bell: <><path d="M6 9a6 6 0 1 1 12 0c0 5 2 6 2 6H4s2-1 2-6Z" /><path d="M10.4 20a2 2 0 0 0 3.2 0" /></>,
   lock: <><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></>,
   check: <path d="m5 12.5 4.5 4.5L19 6.5" />,
+  external: <><path d="M14 4h6v6" /><path d="M20 4 10 14" /><path d="M18 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h5" /></>,
   plus: <path d="M12 5v14M5 12h14" />,
   x: <path d="M6 6l12 12M18 6 6 18" />,
   wine: <path d="M8 22h8M12 15v7M5 3h14l-1.2 6.5a6 6 0 0 1-11.6 0Z" />,
@@ -28,6 +29,19 @@ export function Icon({ name, size = 20, strokeWidth = 1.9, className }: { name: 
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
       {PATHS[name]}
     </svg>
+  );
+}
+
+// Spinning ring — inherits the current text color, transparent at the top so it
+// reads as a rotating arc. Used while the agent thinks / SerpAPI sourcing runs.
+export function Spinner({ size = 16, className }: { size?: number; className?: string }) {
+  return (
+    <span
+      className={`inline-block shrink-0 animate-spin rounded-full border-2 border-current border-t-transparent ${className ?? ""}`}
+      style={{ width: size, height: size }}
+      role="status"
+      aria-label="Loading"
+    />
   );
 }
 
