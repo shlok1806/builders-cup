@@ -47,11 +47,14 @@ Frontend (P1): `/` dashboard · `/cart` build→split · `/approve?user=<id>` de
 
 ## Known integration seams
 
-- **P2 writes to an in-memory fixture, not Supabase yet.** `web/lib/agent-data.ts`
-  is a swap-point shim (see its header). Until it reads/writes real tables,
-  `/api/cart/build` returns a `purchaseId` that `/api/purchase/[id]/split`
-  (DB-backed) can't find — the cart→split chain works via the frontend's seed
-  fallback, not end-to-end. P2 owns closing this.
+- **P2 → Supabase is wired.** `web/lib/agent-data.ts` reads the seeded `products`
+  catalog and writes real `purchases` / `purchase_items` / `policies` rows via the
+  service role. `cart/build → purchase/[id]/split` runs end-to-end on real data
+  (verified: cart builds a `building` purchase, split flags the $52 tequila over
+  Sam's $40 threshold). The model fallback is keyed to the canonical demo prompt
+  and resolves product **names** against the live catalog, so a dead model still
+  writes the right rows. Caveat: the frontend has no auth, so `purchases.created_by`
+  is `null` unless a route caller passes a real `users.id`.
 - **Approval device needs a real user id.** `?user=<id>` must match a seeded
   `users.id` (UUID). The mock roster in `web/lib/data.ts` uses friendly ids for
   offline rendering; wire real UUIDs for the live two-device beat.

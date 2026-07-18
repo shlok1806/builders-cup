@@ -7,7 +7,6 @@
 import { NextResponse } from "next/server";
 import { compilePolicy } from "@/lib/openai";
 import { insertPolicy } from "@/lib/agent-data";
-import { HOUSEHOLD_ID } from "@/lib/catalog.fixture";
 
 export async function POST(req: Request) {
   let body: { userId?: string; text?: string };
@@ -29,7 +28,6 @@ export async function POST(req: Request) {
     const { type, params } = await compilePolicy(text);
     const policy = await insertPolicy({
       userId: body.userId,
-      householdId: HOUSEHOLD_ID,
       type,
       params,
       source_text: text,

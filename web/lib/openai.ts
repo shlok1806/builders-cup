@@ -79,26 +79,56 @@ const PolicySchema = z.object({
 // Cached fallbacks — keyed to the EXACT demo prompt strings.
 // ---------------------------------------------------------------------------
 
-// Catalog ids referenced here mirror lib/catalog.fixture.ts. Kept as string
-// literals (not imported) so this module has zero data-layer dependency.
-const CART_FALLBACKS: Record<string, BuildCartResult> = {
+// Fallbacks are keyed by product NAME (not id) so they resolve against whatever
+// catalog buildCart is handed — the live Supabase catalog in the app, or the
+// standalone fixture in scripts/agent-smoke.ts. Names are matched
+// case-insensitively; an unmatched name is dropped.
+type NameCart = {
+  items: { name: string; qty: number }[];
+  skipped: { name: string; reason: string }[];
+};
+const CART_FALLBACKS: Record<string, NameCart> = {
+  // Canonical live-demo prompt (mirrors web/lib/data.ts `demoPrompt`) → seeded catalog.
+  "tequila, ribeye steak, tortilla chips, bananas, oat milk, paper towels": {
+    items: [
+      { name: "Casamigos Tequila", qty: 1 }, // $52 → trips Sam's $40 threshold
+      { name: "Ribeye Steak", qty: 1 },
+      { name: "Tortilla Chips", qty: 1 },
+      { name: "Bananas", qty: 1 },
+      { name: "Oat Milk", qty: 1 },
+    ],
+    skipped: [{ name: "Paper Towels", reason: "bought Tuesday" }],
+  },
+  // Smoke-harness prompt → the standalone catalog.fixture names.
   "restock + snacks for Friday": {
     items: [
-      { product_id: "a0000000-0000-0000-0000-000000000001", qty: 1 }, // milk
-      { product_id: "a0000000-0000-0000-0000-000000000002", qty: 1 }, // eggs
-      { product_id: "a0000000-0000-0000-0000-000000000003", qty: 1 }, // bread
-      { product_id: "a0000000-0000-0000-0000-000000000010", qty: 2 }, // chips
-      { product_id: "a0000000-0000-0000-0000-000000000011", qty: 1 }, // salsa
-      { product_id: "a0000000-0000-0000-0000-000000000012", qty: 1 }, // trail mix
-      { product_id: "a0000000-0000-0000-0000-000000000020", qty: 1 }, // tequila ($52)
-      { product_id: "a0000000-0000-0000-0000-000000000030", qty: 1 }, // ground beef
-      { product_id: "a0000000-0000-0000-0000-000000000050", qty: 1 }, // trash bags ($10 plain line)
+      { name: "Whole Milk (1 gal)", qty: 1 },
+      { name: "Eggs (dozen)", qty: 1 },
+      { name: "Sourdough Bread", qty: 1 },
+      { name: "Tortilla Chips", qty: 2 },
+      { name: "Salsa", qty: 1 },
+      { name: "Trail Mix", qty: 1 },
+      { name: "Tequila (750ml)", qty: 1 },
+      { name: "Ground Beef (1 lb)", qty: 1 },
+      { name: "Trash Bags (box)", qty: 1 },
     ],
-    skipped: [
-      { name: "Paper Towels (6 rolls)", reason: "bought Tuesday" },
-    ],
+    skipped: [{ name: "Paper Towels (6 rolls)", reason: "bought Tuesday" }],
   },
 };
+
+/** Resolve a name-keyed fallback against the provided catalog → id-keyed cart. */
+function resolveFallback(fb: NameCart, catalog: CatalogEntry[]): BuildCartResult {
+  const byName = new Map(catalog.map((c) => [c.name.toLowerCase(), c.id]));
+  return {
+    items: fb.items
+      .map((i) => {
+        const id = byName.get(i.name.toLowerCase());
+        return id ? { product_id: id, qty: i.qty } : null;
+      })
+      .filter((x): x is { product_id: string; qty: number } => x !== null),
+    skipped: fb.skipped,
+  };
+}
 
 const POLICY_FALLBACKS: Record<string, CompilePolicyResult> = {
   "don't split alcohol to me": {
@@ -182,7 +212,7 @@ export async function buildCart(
       );
     } catch {
       const fallback = CART_FALLBACKS[text];
-      if (fallback) return fallback;
+      if (fallback) return resolveFallback(fallback, catalog);
       throw new Error(
         `buildCart failed after re-ask and no cached fallback for: ${JSON.stringify(text)}`,
       );

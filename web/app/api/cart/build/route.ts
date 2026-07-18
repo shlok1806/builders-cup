@@ -13,7 +13,6 @@ import {
   createBuildingPurchase,
   insertPurchaseItems,
 } from "@/lib/agent-data";
-import { HOUSEHOLD_ID } from "@/lib/catalog.fixture";
 
 export async function POST(req: Request) {
   let body: { text?: string; userId?: string };
@@ -31,7 +30,7 @@ export async function POST(req: Request) {
 
   try {
     const catalog = await getCatalog();
-    const recentNames = await getRecentPurchaseNames(HOUSEHOLD_ID);
+    const recentNames = await getRecentPurchaseNames();
 
     const { items, skipped } = await buildCart(
       text,
@@ -40,7 +39,6 @@ export async function POST(req: Request) {
     );
 
     const purchaseId = await createBuildingPurchase({
-      householdId: HOUSEHOLD_ID,
       createdBy,
       note: text,
     });
