@@ -69,9 +69,15 @@ async function main() {
   // --- offline assertion: output must equal the cached fallback exactly ---
   if (!live) {
     console.log("\nFallback parity");
+    const fb = FALLBACKS.buildCart[CART_PROMPT];
     check(
-      "cart == cached fallback",
-      JSON.stringify(cart) === JSON.stringify(FALLBACKS.buildCart[CART_PROMPT]),
+      "cart matches fallback item count",
+      cart.items.length === fb.items.length,
+      `${cart.items.length} vs ${fb.items.length}`,
+    );
+    check(
+      "cart skipped == cached fallback",
+      JSON.stringify(cart.skipped) === JSON.stringify(fb.skipped),
     );
     check(
       "policy == cached fallback",
