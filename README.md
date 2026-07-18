@@ -8,21 +8,26 @@ checkout, and the dashboard updates. Mobile-first installable PWA.
 ## The app lives in `web/`
 
 **There is one app. It is `web/`.** (An earlier root-level scaffold was
-consolidated in — do not re-create `app/` or `lib/` at the repo root.)
+consolidated in — do not re-create `app/` or `lib/` at the repo root. The root
+`package.json` is a script-only delegator, nothing else.)
 
 ```bash
-cd web
-npm install
-cp .env.local.example .env.local   # fill in the env vars below
-npm run seed                       # seed Supabase with the demo household
-npm run dev:mobile                 # next dev -H 0.0.0.0  (phone can reach it)
+cd web && npm install                # deps live in web/
+cp .env.local.example .env.local     # fill in the env vars below
+npm run seed                         # seed Supabase with the demo household
+npm run dev:mobile                   # next dev -H 0.0.0.0  (phone can reach it)
 ```
+
+Scripts also work from the **repo root** (they delegate into `web/`):
+`npm run dev` · `dev:mobile` · `build` · `start:mobile` · `test` · `seed` ·
+`smoke` · `lint`. Only `npm install` must run in `web/`.
 
 Open http://localhost:3000. For the two-device demo: laptop joins the phone's
 hotspot, phone opens `http://<laptop-local-ip>:3000`, adds to home screen.
 
-Scripts (all run from `web/`): `dev` · `dev:mobile` · `build` · `start:mobile`
-· `test` (vitest) · `seed` · `smoke` (agent fallback rehearsal).
+**Seeing 500s / "module not found in the React Client Manifest" in dev?** That's
+a stale Turbopack cache (common after moving/renaming files). Fix:
+`pkill -f "next dev"; rm -rf web/.next` then start again.
 
 ## Routes (all under `web/app/api`)
 
