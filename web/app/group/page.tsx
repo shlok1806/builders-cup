@@ -108,7 +108,6 @@ export default function GroupDashboard() {
       {/* status bar */}
       <div className="flex items-center justify-between px-6 pt-4 pb-1 text-ink">
         <Clock className="font-sans text-sm font-semibold tabular-nums" />
-        <span className="text-xs font-semibold tracking-tight">●●● ▮</span>
       </div>
 
       {/* header */}
