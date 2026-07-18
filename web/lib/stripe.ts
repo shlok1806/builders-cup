@@ -3,6 +3,7 @@ import Stripe from 'stripe'
 export type ChargeUserResult = {
   piId: string | null
   status: 'succeeded' | 'failed'
+  failureMessage?: string
 }
 
 let stripeClient: Stripe | null = null
@@ -44,7 +45,11 @@ export async function chargeUser(
       piId: paymentIntent.id,
       status: paymentIntent.status === 'succeeded' ? 'succeeded' : 'failed',
     }
-  } catch {
-    return { piId: null, status: 'failed' }
+  } catch (error) {
+    return {
+      piId: null,
+      status: 'failed',
+      failureMessage: error instanceof Error && error.message ? error.message : 'Stripe could not complete the payment',
+    }
   }
 }
