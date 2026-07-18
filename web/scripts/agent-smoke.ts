@@ -40,7 +40,7 @@ async function main() {
 
   // --- Call A: cart builder ---
   console.log("Call A — buildCart");
-  const cart = await buildCart(CART_PROMPT);
+  const cart = await buildCart(CART_PROMPT, []);
   check("returned items", cart.items.length > 0, `${cart.items.length} items`);
   check("all qty positive integers", cart.items.every((i) => Number.isInteger(i.qty) && i.qty > 0));
 
