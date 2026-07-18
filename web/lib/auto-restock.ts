@@ -1,13 +1,14 @@
 import { admin } from './supabase'
 import { dueItems } from './restock'
-import { bestOffer } from './deals'
+import { planCart } from './compose'
 import { runSplit } from './split-run'
 
 // The autonomous agent — Ramp's agentic procurement for a household. It predicts
-// what's about to run out, sources the cheapest offer for each, drafts the cart,
-// and runs the deterministic split. Then it STOPS: the cart is always left at
-// awaiting_approval behind a whole-cart approval, so it can NEVER charge a card
-// without a human tap. It respects the monthly budget as a spend control.
+// what's about to run out, then hands those due items to the shared composer
+// (planCart), which sources the cheapest offer for each and lets the LLM compose
+// the cart within the monthly budget. It drafts, runs the deterministic split, and
+// STOPS: the cart is always left at awaiting_approval behind a whole-cart approval,
+// so it can NEVER charge a card without a human tap.
 
 export type AutoRestockResult = {
   purchaseId: string | null
@@ -15,16 +16,6 @@ export type AutoRestockResult = {
   lineCount: number
   subtotalCents: number
   overBudget: boolean
-}
-
-async function monthSpendCents(db: ReturnType<typeof admin>, householdId: string): Promise<number> {
-  const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString()
-  const { data } = await db
-    .from('item_splits')
-    .select('amount_cents, purchase_items!inner(purchases!inner(household_id, created_at))')
-    .eq('purchase_items.purchases.household_id', householdId)
-    .gte('purchase_items.purchases.created_at', monthStart)
-  return ((data ?? []) as { amount_cents: number }[]).reduce((s, r) => s + r.amount_cents, 0)
 }
 
 export async function runAutoRestock(householdId: string): Promise<AutoRestockResult> {
@@ -43,46 +34,35 @@ export async function runAutoRestock(householdId: string): Promise<AutoRestockRe
     .limit(1)
     .single()
 
-  const { data: budgetRow } = await db
-    .from('households')
-    .select('monthly_budget_cents')
-    .eq('id', householdId)
-    .single()
-  const budgetCents = budgetRow?.monthly_budget_cents ?? 0
+  // Compose the cart: source cheapest offers for the due items and let the
+  // composer pick/quantify within the monthly budget. dueNames marks them all as
+  // running-low so the composer prioritizes them.
+  const plan = await planCart({
+    householdId,
+    seeds: due.map((d) => ({ name: d.name, category: d.category })),
+    dueNames: new Set(due.map((d) => d.name.toLowerCase())),
+  })
 
   const { data: purchase } = await db
     .from('purchases')
-    .insert({ household_id: householdId, status: 'building', subtotal_cents: 0, note: 'auto-restock', created_by: manager?.id })
+    .insert({ household_id: householdId, status: 'building', subtotal_cents: plan.subtotalCents, note: 'auto-restock', created_by: manager?.id })
     .select('id')
     .single()
   const purchaseId = purchase!.id as string
 
-  // Category per due product (purchase_items.category is NOT NULL).
-  const { data: prods } = await db
-    .from('products')
-    .select('id, category')
-    .in('id', due.map((d) => d.productId))
-  const catById = new Map((prods ?? []).map((p) => [p.id as string, p.category as string]))
-
-  let subtotal = 0
-  let lineCount = 0
-  for (const item of due) {
-    const best = await bestOffer(item.productId)
-    if (!best) continue
+  for (const line of plan.lines) {
     await db.from('purchase_items').insert({
       purchase_id: purchaseId,
-      product_id: item.productId,
-      name: item.name,
-      qty: 1,
-      unit_price_cents: best.price_cents,
-      category: catById.get(item.productId) ?? 'household',
-      offer_id: best.id,
+      product_id: line.best.product_id,
+      name: line.name,
+      qty: line.qty,
+      unit_price_cents: line.best.price_cents,
+      category: line.category,
+      offer_id: line.best.id,
     })
-    subtotal += best.price_cents
-    lineCount++
   }
-
-  await db.from('purchases').update({ subtotal_cents: subtotal }).eq('id', purchaseId)
+  const subtotal = plan.subtotalCents
+  const lineCount = plan.lines.length
 
   // Deterministic split — writes item_splits + any per-line (threshold) approvals.
   await runSplit(purchaseId)
@@ -90,8 +70,7 @@ export async function runAutoRestock(householdId: string): Promise<AutoRestockRe
   // Budget control + the hard invariant: always gate the whole auto-cart behind a
   // human approval, even when no individual line tripped a threshold. Checkout is
   // gated on zero pending approvals, so this makes unattended charging impossible.
-  const spend = await monthSpendCents(db, householdId)
-  const overBudget = budgetCents > 0 && spend > budgetCents
+  const overBudget = plan.overBudget
   await db.from('approvals').insert({
     purchase_id: purchaseId,
     purchase_item_id: null,
