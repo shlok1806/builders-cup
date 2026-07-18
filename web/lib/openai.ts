@@ -25,6 +25,7 @@ const SYSTEM = `You turn a household's plain-English shopping request into a str
 Rules:
 - Output only needs the house actually asked for, as {name, category, qty}.
 - category MUST be one of: ${CATEGORIES.join(', ')}.
+- If a requested item appears in recentlyBought, DO NOT add it — put it in "skipped" with a short reason (e.g. "bought recently").
 - Keep names generic and searchable (e.g. "paper towels", not a brand SKU).`
 
 const CART_SCHEMA = {
@@ -80,7 +81,33 @@ const CART_FALLBACKS: Record<string, CartResult> = {
 
 const client = () => new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
-export async function buildCart(text: string): Promise<CartResult> {
+// USD per 1M tokens, per model (OpenAI list prices; update if they change).
+const PRICE_PER_1M: Record<string, { in: number; out: number }> = {
+  'gpt-4o-mini': { in: 0.15, out: 0.6 },
+}
+
+type Usage = { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
+
+// Logs token counts + an estimated cost for one completion so you can see, per
+// call, how many tokens each LLM step burned and roughly what it cost.
+function logUsage(call: string, model: string, usage: Usage | undefined) {
+  const inTok = usage?.prompt_tokens ?? 0
+  const outTok = usage?.completion_tokens ?? 0
+  const rate = PRICE_PER_1M[model]
+  const cost = rate ? (inTok * rate.in + outTok * rate.out) / 1e6 : 0
+  console.log(
+    `[openai] ${call} · ${model} · ${inTok} in + ${outTok} out = ${inTok + outTok} tok` +
+      (rate ? ` · ~$${cost.toFixed(6)}` : ' · (price unknown)')
+  )
+}
+
+// Logged when an LLM call is skipped or fails and the deterministic fallback runs
+// — so a fallback result is never mistaken for a real model response.
+function logFallback(call: string, reason: string) {
+  console.warn(`[openai] ${call} → FALLBACK (no LLM): ${reason}`)
+}
+
+export async function buildCart(text: string, recentNames: string[]): Promise<CartResult> {
   const key = normalizePrompt(text)
   try {
     if (!process.env.OPENAI_API_KEY) throw new Error('no OPENAI_API_KEY')
@@ -88,22 +115,157 @@ export async function buildCart(text: string): Promise<CartResult> {
       model: 'gpt-4o-mini',
       messages: [
         { role: 'system', content: SYSTEM },
-        { role: 'user', content: JSON.stringify({ request: text }) },
+        { role: 'user', content: JSON.stringify({ request: text, recentlyBought: recentNames }) },
       ],
       response_format: {
         type: 'json_schema',
         json_schema: { name: 'cart', strict: true, schema: CART_SCHEMA },
       },
     })
+    logUsage('buildCart', 'gpt-4o-mini', res.usage)
     const content = res.choices[0]?.message?.content
     if (!content) throw new Error('empty completion')
     const parsed = JSON.parse(content) as CartResult
     if (!Array.isArray(parsed.items) || !Array.isArray(parsed.skipped)) {
       throw new Error('bad shape')
     }
+    // Drop anything the model still slipped through against the recent list.
+    const recent = new Set(recentNames.map((n) => n.toLowerCase()))
+    parsed.items = parsed.items.filter((i) => !recent.has(i.name.toLowerCase()))
     return parsed
-  } catch {
+  } catch (e) {
+    logFallback('buildCart', (e as Error).message)
     return CART_FALLBACKS[key] ?? { items: [], skipped: [] }
+  }
+}
+
+// Call A′ — the cart COMPOSER. buildCart parses one request into needs; the
+// composer is the agent that decides the final cart. It is handed real, already-
+// sourced facts — each candidate's cheapest price, its savings vs the next vendor,
+// whether it's predicted to run out soon, whether it was just bought — plus the
+// remaining monthly budget, and it chooses WHAT to buy, HOW MANY, and WHY. It still
+// never invents a price or picks a vendor: it may only select candidates by name;
+// deterministic code prices every chosen line afterwards. composeHeuristic is the
+// no-API fallback so the demo composes intelligently even with the key pulled.
+
+export type ComposeCandidate = {
+  name: string
+  category: string
+  unitPriceCents: number // cheapest in-stock offer we sourced (fact, not asserted)
+  savingsCents: number // runner-up − cheapest; the "deal" size
+  offersCount: number
+  dueSoon: boolean // predicted to run out within the restock horizon
+  boughtRecently: boolean
+}
+export type ComposeContext = {
+  request?: string // the free-text ask, if any (absent for autonomous restock)
+  budgetRemainingCents: number // 0 = no budget set → treat as unlimited
+  candidates: ComposeCandidate[]
+}
+export type ComposedItem = { name: string; qty: number; reason: string | null }
+export type ComposeDecision = { items: ComposedItem[]; skipped: Skipped[] }
+
+const COMPOSE_SYSTEM = `You are a household's procurement agent composing a shopping cart.
+You are given candidate items with REAL sourced facts (cheapest price in cents, savings vs the next vendor, whether each is predicted to run out soon, whether it was bought recently) and the household's remaining monthly budget in cents.
+Decide the smartest cart:
+- Prefer items that are running low (dueSoon) or explicitly requested.
+- DO NOT re-buy something marked boughtRecently — put it in "skipped" with a short reason.
+- Choose sensible quantities (usually 1; more only if clearly implied).
+- Keep the cart's total (sum of unitPriceCents × qty) within budgetRemainingCents when it is > 0; if you must cut, drop the lowest-priority items and skip them with reason "trimmed to stay within budget".
+- You may ONLY choose items by their exact candidate name. Never invent an item or a price.
+Give each chosen item a one-phrase reason (e.g. "running low", "cheapest of 3", "for Friday").`
+
+const COMPOSE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['items', 'skipped'],
+  properties: {
+    items: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['name', 'qty', 'reason'],
+        properties: {
+          name: { type: 'string' },
+          qty: { type: 'integer', minimum: 1 },
+          reason: { type: ['string', 'null'] },
+        },
+      },
+    },
+    skipped: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['name', 'reason'],
+        properties: { name: { type: 'string' }, reason: { type: 'string' } },
+      },
+    },
+  },
+} as const
+
+// Deterministic composer — the demo's safety net with NO OpenAI key. Ranks by
+// running-low first, then by deal size (bigger savings), and greedily fills the
+// cart while staying within the remaining budget. Same ordering the prompt asks
+// the model for, so behavior is coherent whether or not the API is reachable.
+export function composeHeuristic(ctx: ComposeContext): ComposeDecision {
+  const ranked = ctx.candidates
+    .map((c, i) => ({ c, i }))
+    .sort(
+      (a, b) =>
+        Number(b.c.dueSoon) - Number(a.c.dueSoon) ||
+        b.c.savingsCents - a.c.savingsCents ||
+        a.i - b.i
+    )
+    .map((x) => x.c)
+
+  const items: ComposedItem[] = []
+  const skipped: Skipped[] = []
+  let total = 0
+  for (const c of ranked) {
+    if (c.boughtRecently) {
+      skipped.push({ name: c.name, reason: 'bought recently' })
+      continue
+    }
+    if (ctx.budgetRemainingCents > 0 && total + c.unitPriceCents > ctx.budgetRemainingCents) {
+      skipped.push({ name: c.name, reason: 'trimmed to stay within budget' })
+      continue
+    }
+    total += c.unitPriceCents
+    items.push({ name: c.name, qty: 1, reason: c.dueSoon ? 'running low' : null })
+  }
+  return { items, skipped }
+}
+
+export async function composeCart(ctx: ComposeContext): Promise<ComposeDecision> {
+  try {
+    if (!process.env.OPENAI_API_KEY) throw new Error('no OPENAI_API_KEY')
+    const res = await client().chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: COMPOSE_SYSTEM },
+        { role: 'user', content: JSON.stringify(ctx) },
+      ],
+      response_format: {
+        type: 'json_schema',
+        json_schema: { name: 'composed_cart', strict: true, schema: COMPOSE_SCHEMA },
+      },
+    })
+    logUsage('composeCart', 'gpt-4o-mini', res.usage)
+    const content = res.choices[0]?.message?.content
+    if (!content) throw new Error('empty completion')
+    const parsed = JSON.parse(content) as ComposeDecision
+    if (!Array.isArray(parsed.items) || !Array.isArray(parsed.skipped)) throw new Error('bad shape')
+    // The model may only pick real candidates — drop anything invented, and clamp qty.
+    const names = new Set(ctx.candidates.map((c) => c.name.toLowerCase()))
+    parsed.items = parsed.items
+      .filter((i) => names.has(i.name.toLowerCase()) && Number.isFinite(i.qty))
+      .map((i) => ({ name: i.name, qty: Math.max(1, Math.floor(i.qty)), reason: i.reason ?? null }))
+    return parsed
+  } catch (e) {
+    logFallback('composeCart', (e as Error).message)
+    return composeHeuristic(ctx)
   }
 }
 
@@ -119,8 +281,7 @@ export type CompilePolicyResult = { type: PolicyType; params: Record<string, unk
 
 // compilePolicy returns EITHER a compiled policy OR an explicit refusal. It must
 // never force-fit an out-of-scope rule into one of the three types — that silently
-// mangles the split (a "cap my monthly spend" became a per-item threshold). The
-// route turns { ok:false } into a 422 the settings UI already surfaces.
+// mangles the split. The route turns { ok:false } into a 422 the settings UI shows.
 export type PolicyOutcome =
   | { ok: true; type: PolicyType; params: Record<string, unknown> }
   | { ok: false; reason: string }
@@ -141,14 +302,6 @@ const CATEGORY_WORDS: [RegExp, string][] = [
   [/household|paper towels?|toiletr|supplies/, 'household'],
   [/grocer/, 'groceries'],
 ]
-
-// Infer a split-relevant category from a raw item name (itemized cart entry —
-// the user types "Ribeye Steak", we need "meat" so category exclusions fire).
-// Keyword match against the catalog categories; unknown -> groceries.
-export function categorize(name: string): string {
-  const s = name.toLowerCase()
-  return CATEGORY_WORDS.find(([re]) => re.test(s))?.[1] ?? 'groceries'
-}
 
 // Deterministic keyword compiler — the demo's safety net so policies compile with
 // NO OpenAI key and for phrasings not in the exact-match table below.
@@ -274,6 +427,7 @@ async function llmCompilePolicy(sentence: string): Promise<CompilePolicyResult |
       json_schema: { name: 'policy', strict: true, schema: POLICY_SCHEMA },
     },
   })
+  logUsage('compilePolicy', 'gpt-4o-mini', res.usage)
   const content = res.choices[0]?.message?.content
   if (!content) throw new Error('empty completion')
   const parsed = JSON.parse(content) as {
@@ -293,7 +447,8 @@ export async function compilePolicy(sentence: string): Promise<PolicyOutcome> {
   try {
     const llm = await llmCompilePolicy(sentence)
     return llm ? { ok: true, ...llm } : { ok: false, reason: UNSUPPORTED_HINT }
-  } catch {
+  } catch (e) {
+    logFallback('compilePolicy', (e as Error).message)
     const fallback = POLICY_FALLBACKS[sentence] ?? heuristicPolicy(sentence)
     return fallback ? { ok: true, ...fallback } : { ok: false, reason: UNSUPPORTED_HINT }
   }
