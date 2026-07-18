@@ -12,10 +12,11 @@ import { planCart, type Seed } from '@/lib/compose'
 export async function POST(req: Request) {
   const db = admin()
   try {
-    const { text, householdId, createdBy } = (await req.json()) as {
+    const { text, householdId, createdBy, cartId } = (await req.json()) as {
       text?: string
       householdId?: string
       createdBy?: string
+      cartId?: string
     }
     if (!text?.trim()) return NextResponse.json({ error: 'text required' }, { status: 400 })
 
@@ -44,13 +45,29 @@ export async function POST(req: Request) {
 
     const plan = await planCart({ householdId: hhId, request: text, seeds, dueNames })
 
-    const { data: purchase, error: pErr } = await db
-      .from('purchases')
-      .insert({ household_id: hhId, status: 'building', subtotal_cents: plan.subtotalCents, note: text, created_by: userId })
-      .select('id')
-      .single()
-    if (pErr) throw pErr
-    const purchaseId = purchase!.id as string
+    // Running cart: if the client passes an existing building cart, append to it;
+    // otherwise open a new one. ponytail: we trust the client's cartId (single
+    // household, no auth); scope by household/user once accounts exist.
+    let purchaseId: string
+    if (cartId) {
+      const { data: existing } = await db
+        .from('purchases')
+        .select('id, status')
+        .eq('id', cartId)
+        .single()
+      if (!existing || existing.status !== 'building') {
+        return NextResponse.json({ error: 'cart not open' }, { status: 409 })
+      }
+      purchaseId = existing.id as string
+    } else {
+      const { data: purchase, error: pErr } = await db
+        .from('purchases')
+        .insert({ household_id: hhId, status: 'building', subtotal_cents: 0, note: text, created_by: userId })
+        .select('id')
+        .single()
+      if (pErr) throw pErr
+      purchaseId = purchase!.id as string
+    }
 
     const items: {
       id: string
@@ -94,9 +111,24 @@ export async function POST(req: Request) {
       })
     }
 
+    // Reconcile the cart's stored subtotal + count from all its rows (this build
+    // may have appended to items already there).
+    const { data: allRows } = await db
+      .from('purchase_items')
+      .select('unit_price_cents, qty')
+      .eq('purchase_id', purchaseId)
+    const cartCount = (allRows ?? []).length
+    const cartSubtotalCents = (allRows ?? []).reduce(
+      (s, r: { unit_price_cents: number; qty: number }) => s + r.unit_price_cents * r.qty,
+      0,
+    )
+    await db.from('purchases').update({ subtotal_cents: cartSubtotalCents }).eq('id', purchaseId)
+
     return NextResponse.json({
       purchaseId,
       items,
+      cartCount,
+      cartSubtotalCents,
       skipped: [...cart.skipped, ...plan.skipped],
       dealsCompared: plan.dealsCompared,
       overBudget: plan.overBudget,
