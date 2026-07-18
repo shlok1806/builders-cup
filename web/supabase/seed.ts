@@ -141,10 +141,10 @@ async function main() {
 
   // Members for computing prior-purchase splits (mirror the seeded policies).
   const members: Member[] = [
-    { userId: uid('Sam'), weight: 1, excludedCategories: [], approvalThresholdCents: 4000 },
-    { userId: uid('Priya'), weight: 1, excludedCategories: ['alcohol'], approvalThresholdCents: null },
-    { userId: uid('Alex'), weight: 1, excludedCategories: ['meat'], approvalThresholdCents: null },
-    { userId: uid('Jordan'), weight: 2, excludedCategories: [], approvalThresholdCents: null },
+    { userId: uid('Sam'), weight: 1, excludedCategories: [], excludedItems: [], approvalThresholdCents: 4000 },
+    { userId: uid('Priya'), weight: 1, excludedCategories: ['alcohol'], excludedItems: [], approvalThresholdCents: null },
+    { userId: uid('Alex'), weight: 1, excludedCategories: ['meat'], excludedItems: [], approvalThresholdCents: null },
+    { userId: uid('Jordan'), weight: 2, excludedCategories: [], excludedItems: [], approvalThresholdCents: null },
   ].sort((a, b) => (a.userId < b.userId ? -1 : 1))
 
   // Backdated prior purchases (created_at earlier this month) so the dashboard
@@ -203,10 +203,11 @@ async function main() {
     const { data: inserted } = await db
       .from('purchase_items')
       .insert(itemRows.map((it) => ({ ...it, purchase_id: purchase!.id })))
-      .select('id, category, unit_price_cents, qty')
+      .select('id, name, category, unit_price_cents, qty')
 
     const lines: Line[] = inserted!.map((it) => ({
       itemId: it.id,
+      name: it.name,
       category: it.category,
       lineTotalCents: it.unit_price_cents * it.qty,
     }))
