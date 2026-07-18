@@ -20,7 +20,7 @@ export async function GET() {
   const { data } = await db
     .from('item_splits')
     .select(
-      'amount_cents, user_id, users(name), purchase_items!inner(category, purchases!inner(created_at, household_id))'
+      'amount_cents, user_id, users(name), purchase_items!inner(category, purchases!inner(created_at, household_id, status))'
     )
     .eq('purchase_items.purchases.household_id', household.id)
     .gte('purchase_items.purchases.created_at', monthStart)
@@ -29,17 +29,23 @@ export async function GET() {
     amount_cents: number
     user_id: string
     users: { name: string } | { name: string }[] | null
-    purchase_items: { category: string } | { category: string }[]
+    purchase_items: { category: string; purchases: { status: string } | { status: string }[] }
+      | { category: string; purchases: { status: string } | { status: string }[] }[]
   }
   const rows = (data ?? []) as unknown as Row[]
   const one = <T,>(v: T | T[] | null): T | null => (Array.isArray(v) ? v[0] ?? null : v)
 
   let thisMonthCents = 0
+  let owedCents = 0 // splits on purchases not yet charged (settled)
   const byCat = new Map<string, number>()
   const byUser = new Map<string, { name: string; cents: number }>()
+  const pendingUsers = new Set<string>() // owe money on an uncharged purchase
   for (const r of rows) {
     thisMonthCents += r.amount_cents
-    const cat = one(r.purchase_items)?.category ?? 'other'
+    const pi = one(r.purchase_items)
+    const settled = one(pi?.purchases ?? null)?.status === 'charged'
+    if (!settled) { owedCents += r.amount_cents; pendingUsers.add(r.user_id) }
+    const cat = pi?.category ?? 'other'
     byCat.set(cat, (byCat.get(cat) ?? 0) + r.amount_cents)
     const name = one(r.users)?.name ?? ''
     const u = byUser.get(r.user_id) ?? { name, cents: 0 }
@@ -59,5 +65,8 @@ export async function GET() {
     })),
     budgetCents: household.monthly_budget_cents,
     overBudget: thisMonthCents > household.monthly_budget_cents,
+    owedCents,
+    chargedUsers: byUser.size - pendingUsers.size,
+    totalUsers: byUser.size,
   })
 }

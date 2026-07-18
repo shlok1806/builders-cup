@@ -21,11 +21,15 @@ type Dash = {
   byUser: { userId: string; name: string; cents: number }[];
   budgetCents: number;
   overBudget: boolean;
+  owedCents: number;
+  chargedUsers: number;
+  totalUsers: number;
 };
 
 export default function GroupDashboard() {
   const { me, byId } = useMe();
   const [dash, setDash] = useState<Dash | null>(null);
+  const [pending, setPending] = useState<number | null>(null);
 
   // Live numbers from /api/dashboard; keep the mock as the offline fallback so
   // the landing screen never renders empty.
@@ -35,6 +39,17 @@ export default function GroupDashboard() {
       .then(setDash)
       .catch(() => {});
   }, []);
+
+  // Live approval-bell badge for the current user. Won't match the hardcoded
+  // mock once someone flags an item mid-demo, so read it from the same source
+  // the approval device polls.
+  useEffect(() => {
+    if (!me) return;
+    fetch(`/api/approvals?user=${encodeURIComponent(me)}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("bad status"))))
+      .then((d) => setPending(d.pending?.length ?? 0))
+      .catch(() => {});
+  }, [me]);
 
   const spent = dash ? dash.thisMonthCents / 100 : totals.spent;
   const budget = dash ? dash.budgetCents / 100 : totals.budget;
@@ -65,6 +80,12 @@ export default function GroupDashboard() {
         })
     : people.map((p) => ({ id: p.id, name: p.name, initials: p.initials, color: p.color, amount: p.share }));
 
+  const badge = pending ?? totals.needApproval;
+  const owed = dash ? dash.owedCents / 100 : totals.owed;
+  const allSquare = owed <= 0;
+  const charged = dash ? dash.chargedUsers : persons.length;
+  const chargedOf = dash ? dash.totalUsers : persons.length;
+
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-[440px] flex-col bg-bg">
       {/* status bar */}
@@ -89,9 +110,11 @@ export default function GroupDashboard() {
           <ThemeToggle />
           <Link href={`/approve?user=${encodeURIComponent(me)}`} className="press relative grid h-[42px] w-[42px] place-items-center rounded-full border border-line bg-surface text-ink-soft">
             <Icon name="bell" size={20} />
-            <span className="absolute -right-0.5 -top-0.5 grid h-[18px] min-w-[18px] place-items-center rounded-full border-2 border-bg bg-warn px-1 text-[10px] font-semibold text-white">
-              {totals.needApproval}
-            </span>
+            {badge > 0 && (
+              <span className="absolute -right-0.5 -top-0.5 grid h-[18px] min-w-[18px] place-items-center rounded-full border-2 border-bg bg-warn px-1 text-[10px] font-semibold text-white">
+                {badge}
+              </span>
+            )}
           </Link>
         </div>
       </header>
@@ -125,8 +148,8 @@ export default function GroupDashboard() {
             <div className="flex items-center gap-2.5">
               <CheckBadge size={22} delay={500} />
               <div className="leading-tight">
-                <div className="text-[13.5px] font-semibold text-ink">You&apos;re all square</div>
-                <div className="text-[11.5px] font-medium text-ink-soft">{money(totals.owed)} owed · {persons.length} of {persons.length} charged</div>
+                <div className="text-[13.5px] font-semibold text-ink">{allSquare ? "You're all square" : "Settling up"}</div>
+                <div className="text-[11.5px] font-medium text-ink-soft">{money(owed)} owed · {charged} of {chargedOf} charged</div>
               </div>
             </div>
             <div className="flex">
