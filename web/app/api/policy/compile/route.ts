@@ -25,7 +25,13 @@ export async function POST(req: Request) {
   }
 
   try {
-    const { type, params } = await compilePolicy(text);
+    const outcome = await compilePolicy(text);
+    if (!outcome.ok) {
+      // Out-of-scope rule — refuse with a helpful hint instead of storing a
+      // silently-wrong policy. The settings UI surfaces `error` on !r.ok.
+      return NextResponse.json({ error: outcome.reason }, { status: 422 });
+    }
+    const { type, params } = outcome;
     const policy = await insertPolicy({
       userId: body.userId,
       type,

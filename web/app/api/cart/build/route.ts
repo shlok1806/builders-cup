@@ -14,12 +14,36 @@ import { planCart, type Seed } from '@/lib/compose'
 export async function POST(req: Request) {
   const db = admin()
   try {
-    const { text, householdId, createdBy } = (await req.json()) as {
+    const { text, items: rawItems, householdId, createdBy } = (await req.json()) as {
       text?: string
+      items?: { name?: string; qty?: number }[]
       householdId?: string
       createdBy?: string
     }
-    if (!text) return NextResponse.json({ error: 'text required' }, { status: 400 })
+
+    // Build the need list: itemized rows take priority over free text.
+    let needs: { name: string; category: string; qty: number }[]
+    let skipped: { name: string; reason: string }[]
+    let note: string
+    if (Array.isArray(rawItems) && rawItems.length) {
+      needs = rawItems
+        .filter((i) => i.name?.trim())
+        .map((i) => ({
+          name: i.name!.trim(),
+          qty: Math.max(1, Math.floor(Number(i.qty) || 1)),
+          category: categorize(i.name!),
+        }))
+      if (!needs.length) return NextResponse.json({ error: 'items required' }, { status: 400 })
+      skipped = []
+      note = needs.map((n) => `${n.qty}× ${n.name}`).join(', ')
+    } else if (text) {
+      const cart = await buildCart(text)
+      needs = cart.items
+      skipped = [...cart.skipped]
+      note = text
+    } else {
+      return NextResponse.json({ error: 'text or items required' }, { status: 400 })
+    }
 
     // Resolve household (no auth — default to the seeded one).
     let hhId: string | undefined = householdId
