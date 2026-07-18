@@ -53,11 +53,16 @@ async function main() {
   // --- Call B: policy compiler ---
   console.log("\nCall B — compilePolicy");
   const policy = await compilePolicy(POLICY_PROMPT);
-  check("type in enum", (POLICY_TYPES as readonly string[]).includes(policy.type), policy.type);
+  check("compiled (not refused)", policy.ok, policy.ok ? policy.type : policy.reason);
+  check(
+    "type in enum",
+    policy.ok && (POLICY_TYPES as readonly string[]).includes(policy.type),
+    policy.ok ? policy.type : "refused",
+  );
   check(
     "alcohol -> exclude_category",
-    policy.type === "exclude_category" && policy.params.category === "alcohol",
-    JSON.stringify(policy.params),
+    policy.ok && policy.type === "exclude_category" && policy.params.category === "alcohol",
+    policy.ok ? JSON.stringify(policy.params) : "refused",
   );
 
   // --- offline assertion: output must equal the cached fallback exactly ---
@@ -75,7 +80,9 @@ async function main() {
     );
     check(
       "policy == cached fallback",
-      JSON.stringify(policy) === JSON.stringify(FALLBACKS.compilePolicy[POLICY_PROMPT]),
+      policy.ok &&
+        JSON.stringify({ type: policy.type, params: policy.params }) ===
+          JSON.stringify(FALLBACKS.compilePolicy[POLICY_PROMPT]),
     );
   }
 
