@@ -1,6 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { useCart } from "@/lib/useCart";
 
 /* ---------- Icons (stroke = currentColor) ---------- */
 const PATHS: Record<string, React.ReactNode> = {
@@ -26,6 +28,24 @@ export function Icon({ name, size = 20, strokeWidth = 1.9, className }: { name: 
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
       {PATHS[name]}
     </svg>
+  );
+}
+
+/* ---------- Cart tab (bottom bar) — links to the running cart w/ count badge ---------- */
+export function CartTab() {
+  const { count } = useCart();
+  return (
+    <Link href="/checkout" className="relative flex flex-col items-center gap-1.5 text-ink-faint">
+      <span className="relative">
+        <Icon name="cart" size={24} />
+        {count > 0 && (
+          <span className="absolute -right-2 -top-1.5 grid h-[16px] min-w-[16px] place-items-center rounded-full border-2 border-surface bg-accent px-1 text-[9px] font-bold text-on-accent">
+            {count}
+          </span>
+        )}
+      </span>
+      <span className="text-[11px] font-semibold">Cart</span>
+    </Link>
   );
 }
 
