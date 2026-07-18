@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { Avatar, Icon, ThemeToggle } from "@/components/ui";
 import UserSwitcher from "@/components/UserSwitcher";
 import { useMe } from "@/lib/useMe";
-import { household, money } from "@/lib/data";
+import { household, money, totals } from "@/lib/data";
 
 type Dash = {
   thisMonthCents: number;
@@ -26,8 +26,11 @@ export default function Groups() {
       .catch(() => {});
   }, []);
 
-  const total = dash ? dash.thisMonthCents / 100 : 0;
-  const myShare = (dash?.byUser.find((u) => u.userId === me)?.cents ?? 0) / 100;
+  // Fall back to the mock totals (like the group dashboard) so a slow/failed
+  // /api/dashboard shows plausible numbers, not a broken-looking $0.00.
+  const total = dash ? dash.thisMonthCents / 100 : totals.spent;
+  const liveShare = dash?.byUser.find((u) => u.userId === me)?.cents;
+  const myShare = liveShare != null ? liveShare / 100 : totals.spent / Math.max(1, users.length);
   const members = users.length;
 
   return (

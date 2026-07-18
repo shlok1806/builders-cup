@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 /* ---------- Icons (stroke = currentColor) ---------- */
 const PATHS: Record<string, React.ReactNode> = {
   home: <><path d="M3 10.5 12 3l9 7.5" /><path d="M5 9.5V20h14V9.5" /></>,
+  back: <><path d="M19 12H5" /><path d="m12 19-7-7 7-7" /></>,
   cart: <><circle cx="9" cy="20" r="1.3" /><circle cx="18" cy="20" r="1.3" /><path d="M2.5 3.5H5l2.2 11a1.4 1.4 0 0 0 1.4 1.1h8.6a1.4 1.4 0 0 0 1.4-1.1L21.5 7H5.7" /></>,
   split: <><path d="M12 3a9 9 0 1 0 9 9h-9Z" /><path d="M12 3v9" /></>,
   rules: <><path d="M4 7h11M4 12h16M4 17h8" /><circle cx="18" cy="7" r="2.2" /><circle cx="9" cy="17" r="2.2" /></>,

@@ -99,8 +99,18 @@ export async function runSplit(purchaseId: string): Promise<SplitLineView[]> {
 
   // Replace pending approvals (keep approved/declined history untouched).
   await db.from('approvals').delete().eq('purchase_id', purchaseId).eq('status', 'pending')
+  // Don't resurrect a line a human already approved: a re-split (e.g. the decline
+  // path) re-flags every still-over-threshold line, but items already 'approved'
+  // must not get a fresh 'pending' row — that would re-block checkout spuriously.
+  const { data: approvedRows } = await db
+    .from('approvals')
+    .select('purchase_item_id')
+    .eq('purchase_id', purchaseId)
+    .eq('status', 'approved')
+  const approvedItemIds = new Set((approvedRows ?? []).map((r) => r.purchase_item_id))
+  const freshPending = pending.filter((f) => !approvedItemIds.has(f.itemId))
   const toInsert = [
-    ...pending.map((f) => ({ ...f, status: 'pending' as const })),
+    ...freshPending.map((f) => ({ ...f, status: 'pending' as const })),
     // 'always' verdict: record an approved row so there's an audit trail per run.
     ...autoApproved.map((f) => ({ ...f, status: 'approved' as const })),
   ]
@@ -128,7 +138,7 @@ export async function runSplit(purchaseId: string): Promise<SplitLineView[]> {
 
   await db
     .from('purchases')
-    .update({ status: pending.length ? 'awaiting_approval' : 'building' })
+    .update({ status: freshPending.length ? 'awaiting_approval' : 'building' })
     .eq('id', purchaseId)
 
   if (dropItemIds.length) {

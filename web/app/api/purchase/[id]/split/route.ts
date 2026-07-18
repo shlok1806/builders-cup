@@ -9,6 +9,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     const lines = await runSplit(id)
     return NextResponse.json({ lines })
   } catch (e) {
-    return NextResponse.json({ error: (e as Error).message }, { status: 400 })
+    const msg = (e as Error).message
+    return NextResponse.json({ error: msg }, { status: /not found/i.test(msg) ? 404 : 400 })
   }
 }

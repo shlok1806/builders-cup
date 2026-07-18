@@ -11,6 +11,7 @@ export function computeSplit(lines: Line[], members: Member[]): SplitResult {
     // 1-2. exclusions, with orphan restore (an exclusion can't zero a real cost)
     let onLine = members.filter((m) => !m.excludedCategories.includes(line.category))
     if (onLine.length === 0) onLine = members
+    if (onLine.length === 0) continue // no members at all — nothing to allocate
     // 3. weights
     const totalWeight = onLine.reduce((s, m) => s + m.weight, 0)
     // 4. largest-remainder rounding — per-user cents sum exactly to the line total
@@ -33,7 +34,7 @@ export function computeSplit(lines: Line[], members: Member[]): SplitResult {
       flagged.push({
         itemId: line.itemId,
         approverId: approver.userId,
-        rule: `over $${(approver.approvalThresholdCents! / 100).toFixed(0)} approval threshold`,
+        rule: `over $${(approver.approvalThresholdCents! / 100).toFixed(approver.approvalThresholdCents! % 100 === 0 ? 0 : 2)} approval threshold`,
       })
   }
   return { allocations, flagged }
