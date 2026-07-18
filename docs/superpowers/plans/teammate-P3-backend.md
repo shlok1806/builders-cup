@@ -135,9 +135,9 @@ export function computeSplit(lines: Line[], members: Member[]): SplitResult {
 ## Task P3.3b: Pending-approvals query — F5 support (poll fallback + device load)
 **Files:** Create `app/api/approvals/route.ts`
 `GET /api/approvals?user=<id> → { pending:[{id,purchaseId,purchaseItemId,approverId,rule,itemName,amountCents}] }`
-Realtime only delivers events fired *after* a client subscribes — an approval already `pending` when the approver's phone connects emits nothing. This endpoint backs both the device's initial load **and** P1's `NEXT_PUBLIC_REALTIME=0` poll fallback (which otherwise has nothing to poll).
-- [ ] Select `approvals` where `approver_id = user` and `status='pending'`, join item name + line total. Verify: after the split flags the tequila, `GET /api/approvals?user=<sam>` returns one row.
-- [ ] Commit: `git commit -m "feat: pending approvals query (poll fallback + device load)"`
+Realtime only delivers events fired *after* a client subscribes — an approval already `pending` when the approver's phone PWA connects over the phone-hotspot/laptop-local-IP path emits nothing. This endpoint backs both the PWA's initial load **and** P1's `NEXT_PUBLIC_REALTIME=0` poll fallback (which otherwise has nothing to poll).
+- [ ] Select `approvals` where `approver_id = user` and `status='pending'`, join item name + line total. Verify: after the split flags the tequila, the installed phone PWA route (`/approve?user=<sam>`) can load one pending approval via `GET /api/approvals?user=<sam>`.
+- [ ] Commit: `git commit -m "feat: pending approvals query (poll fallback + pwa device load)"`
 
 ## Task P3.4: Dashboard query route — F7
 **Files:** Create `app/api/dashboard/route.ts`
