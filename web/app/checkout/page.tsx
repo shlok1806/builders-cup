@@ -118,7 +118,6 @@ export default function CheckoutPage() {
   const totalQty = items ? items.reduce((s, it) => s + it.qty, 0) : 0;
   const belowMin = totalQty < MIN_CHECKOUT_ITEMS;
   const remaining = Math.max(0, MIN_CHECKOUT_ITEMS - totalQty);
-  const paid = charges != null && charges.length > 0 && charges.every((c) => c.status === "succeeded");
   // cartId===null means no running cart at all → empty. Otherwise wait for the fetch.
   const empty = cartId === null || (items != null && items.length === 0);
   const loading = cartId !== null && items == null;
@@ -135,7 +134,7 @@ export default function CheckoutPage() {
       <main className="flex-1 space-y-4 px-5 pb-28 pt-1">
         {loading && <p className="px-1 text-[13px] font-medium text-ink-soft">Loading…</p>}
 
-        {recorded && (
+        {completed && (
           <section className="a-rise rounded-[22px] border border-line bg-positive-soft p-6 text-center">
             <div className="text-[12px] font-semibold uppercase tracking-[0.1em] text-positive">Recorded</div>
             <div className="mt-1 font-display text-[22px] font-bold text-ink">This shared purchase is complete</div>
@@ -144,7 +143,7 @@ export default function CheckoutPage() {
           </section>
         )}
 
-        {empty && !recorded && (
+        {empty && !completed && (
           <section className="a-rise rounded-[22px] border border-line bg-surface p-8 text-center">
             <Icon name="cart" size={28} className="mx-auto text-ink-faint" />
             <div className="mt-3 text-sm font-semibold text-ink">Your cart is empty</div>
@@ -155,7 +154,7 @@ export default function CheckoutPage() {
 
         {err && <p className="a-rise rounded-2xl border border-line bg-warn-soft px-4 py-3 text-[13px] font-semibold text-ink">{err}</p>}
 
-        {items != null && items.length > 0 && !recorded && (
+        {items != null && items.length > 0 && !completed && (
           <>
             <section className="a-rise space-y-2.5" style={{ animationDelay: "40ms" }}>
               <div className="overflow-hidden rounded-[22px] border border-line bg-surface">

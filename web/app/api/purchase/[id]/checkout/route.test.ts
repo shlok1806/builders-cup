@@ -95,7 +95,13 @@ describe('POST /api/purchase/[id]/checkout', () => {
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toEqual({ completed: true })
     expect(purchaseUpdate.update).toHaveBeenCalledWith({ status: 'charged' })
-    expect(from.mock.calls.map(([table]) => table)).toEqual(['purchases', 'approvals', 'item_splits', 'purchases'])
+    // Recording path: read purchase, check approvals, read splits, mark charged.
+    // (A best-effort learning write-back may read purchase_items afterward.)
+    const tables = from.mock.calls.map(([table]) => table)
+    expect(tables.slice(0, 4)).toEqual(['purchases', 'approvals', 'item_splits', 'purchases'])
+    // The point of this test: completion never reads payment methods or writes charges.
+    expect(tables).not.toContain('payment_methods')
+    expect(tables).not.toContain('charges')
   })
 
   it('refuses to record a purchase with no positive split', async () => {

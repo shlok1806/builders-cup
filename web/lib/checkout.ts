@@ -1,6 +1,4 @@
-import type { SupabaseClient } from '@supabase/supabase-js'
-
-import { aggregateSplitsByUser, type CheckoutCharge } from '@/lib/payments'
+import { aggregateSplitsByUser } from '@/lib/payments'
 import { recordPurchaseLearnings } from '@/lib/learn'
 import { admin } from '@/lib/supabase'
 
@@ -11,19 +9,7 @@ export type CheckoutResult =
 type PurchaseRow = {
   id: string
   status: string
-}
-
-type ChargeRow = {
-  user_id: string
-  amount_cents: number
-  status: 'succeeded' | 'failed'
-  stripe_payment_intent_id: string | null
-}
-
-type ExistingChargeRow = {
-  id: string
-  user_id: string
-  amount_cents: number
+  household_id: string
 }
 
 type SplitRow = {
@@ -85,48 +71,13 @@ export async function checkoutPurchase(purchaseId: string, supabase = admin()): 
     return { status: 500, body: { error: updateError.message } }
   }
 
-  if (inserts.length > 0) {
-    const { error: insertError } = await supabase.from('charges').insert(inserts)
-    if (insertError) {
-      return { status: 500, body: { error: insertError.message } }
-    }
+  // Feed the learning loop now that the purchase is real. Best-effort: a learning
+  // failure must never fail or roll back a completed purchase.
+  try {
+    await recordPurchaseLearnings(purchase.household_id, purchaseId, supabase)
+  } catch (error) {
+    console.error(`[learn] write-back failed for purchase ${purchaseId}:`, error)
   }
 
-  if (charges.every((charge) => charge.status === 'succeeded')) {
-    const { error: updateError } = await supabase.from('purchases').update({ status: 'charged' }).eq('id', purchaseId)
-
-    if (updateError) {
-      return { status: 500, body: { error: updateError.message } }
-    }
-
-    // Feed the learning loop now that the purchase is real. Best-effort: a learning
-    // failure must never fail or roll back a completed charge.
-    try {
-      await recordPurchaseLearnings(purchase.household_id, purchaseId, supabase)
-    } catch (error) {
-      console.error(`[learn] write-back failed for purchase ${purchaseId}:`, error)
-    }
-  }
-
-  return { status: 200, body: { charges } }
-}
-
-async function existingCharges(supabase: SupabaseClient, purchaseId: string): Promise<CheckoutCharge[]> {
-  const { data, error } = await supabase
-    .from('charges')
-    .select('user_id,amount_cents,status,stripe_payment_intent_id')
-    .eq('purchase_id', purchaseId)
-    .order('created_at', { ascending: true })
-    .returns<ChargeRow[]>()
-
-  if (error) {
-    throw error
-  }
-
-  return (data ?? []).map((charge) => ({
-    userId: charge.user_id,
-    amountCents: charge.amount_cents,
-    status: charge.status,
-    stripePaymentIntentId: charge.stripe_payment_intent_id,
-  }))
+  return { status: 200, body: { completed: true } }
 }
