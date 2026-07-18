@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Avatar, CartTab, Icon } from "@/components/ui";
+import { Gauge } from "@/components/Gauge";
 import { useMe } from "@/lib/useMe";
 import { money } from "@/lib/data";
 
@@ -21,42 +22,6 @@ type Dash = {
   budgetCents: number;
   overBudget: boolean;
 };
-
-// --- SVG 270° gauge (speedometer, open at the bottom) ---
-const clamp = (n: number) => Math.max(0, Math.min(1, n));
-function pt(c: number, r: number, deg: number): [number, number] {
-  const a = ((deg - 90) * Math.PI) / 180; // 0deg = top, clockwise
-  return [c + r * Math.cos(a), c + r * Math.sin(a)];
-}
-// Arc from startDeg sweeping `span` degrees clockwise (deg measured clockwise from top).
-function arc(c: number, r: number, startDeg: number, span: number): string {
-  const [x1, y1] = pt(c, r, startDeg);
-  const [x2, y2] = pt(c, r, startDeg + span);
-  const large = span > 180 ? 1 : 0;
-  return `M ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2}`;
-}
-const START = 225; // bottom-left; 270° sweep leaves a 90° gap at the bottom
-
-function Gauge({
-  pct, color, size = 116, stroke = 11, children, label,
-}: {
-  pct: number; color: string; size?: number; stroke?: number; children: React.ReactNode; label: string;
-}) {
-  const c = size / 2;
-  const r = c - stroke;
-  const p = clamp(pct);
-  return (
-    <div className="relative grid place-items-center" style={{ width: size, height: size }} role="img" aria-label={label}>
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-0">
-        <path d={arc(c, r, START, 270)} fill="none" stroke="var(--line)" strokeWidth={stroke} strokeLinecap="round" />
-        {p > 0 && (
-          <path d={arc(c, r, START, 270 * p)} fill="none" stroke={color} strokeWidth={stroke} strokeLinecap="round" />
-        )}
-      </svg>
-      <div className="absolute inset-0 grid place-items-center text-center leading-none">{children}</div>
-    </div>
-  );
-}
 
 export default function Analytics() {
   const { byId } = useMe();
