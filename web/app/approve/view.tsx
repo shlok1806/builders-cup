@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { Icon } from "@/components/ui";
+import { Clock, Icon } from "@/components/ui";
 import ApprovalCard, { type ApprovalCardData } from "@/components/ApprovalCard";
 import { RealtimeProvider, useApprovals } from "@/components/RealtimeProvider";
 import { money, pendingApproval as seed } from "@/lib/data";
@@ -29,10 +29,12 @@ function Device() {
   const { latest, refresh } = useApprovals();
   const [decision, setDecision] = useState<null | "approved" | "declined">(null);
   const [standing, setStanding] = useState<'always' | 'ask' | 'never'>('ask');
+  const [chargedCents, setChargedCents] = useState<number | null>(null);
 
   const decide = async (d: "approved" | "declined") => {
     setDecision(d);
     if (latest) {
+      setChargedCents(latest.amountCents); // capture before refresh() clears `latest`
       try {
         await fetch(`/api/approval/${latest.id}`, {
           method: "POST",
@@ -74,7 +76,7 @@ function Device() {
           </h1>
           <p className="mt-2 text-[15px] font-medium text-ink-soft">
             {approved
-              ? `Your ${money(seed.yourShare)} share was charged. The cart is unblocked.`
+              ? `Your ${money((chargedCents ?? Math.round(seed.yourShare * 100)) / 100)} share was charged. The cart is unblocked.`
               : "Removed from the cart. Everyone will be notified."}
           </p>
         </div>
@@ -93,8 +95,7 @@ function Device() {
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-[440px] flex-col bg-bg">
       <div className="flex items-center justify-between px-6 pt-4 pb-1 text-ink">
-        <span className="text-sm font-semibold tabular-nums">9:41</span>
-        <span className="text-xs font-semibold">●●● ▮</span>
+        <Clock className="text-sm font-semibold tabular-nums" />
       </div>
       {latest?.recurringCartId && (
         <div className="px-6 pb-1 text-[13px] font-medium text-ink-soft">

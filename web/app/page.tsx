@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Avatar, Icon, ThemeToggle } from "@/components/ui";
+import { Avatar, Clock, Icon, ThemeToggle } from "@/components/ui";
 import UserSwitcher from "@/components/UserSwitcher";
 import { useMe } from "@/lib/useMe";
-import { household, money } from "@/lib/data";
+import { household, money, totals } from "@/lib/data";
 
 type Dash = {
   thisMonthCents: number;
@@ -26,16 +26,18 @@ export default function Groups() {
       .catch(() => {});
   }, []);
 
-  const total = dash ? dash.thisMonthCents / 100 : 0;
-  const myShare = (dash?.byUser.find((u) => u.userId === me)?.cents ?? 0) / 100;
+  // Fall back to the mock totals (like the group dashboard) so a slow/failed
+  // /api/dashboard shows plausible numbers, not a broken-looking $0.00.
+  const total = dash ? dash.thisMonthCents / 100 : totals.spent;
+  const liveShare = dash?.byUser.find((u) => u.userId === me)?.cents;
+  const myShare = liveShare != null ? liveShare / 100 : totals.spent / Math.max(1, users.length);
   const members = users.length;
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-[440px] flex-col bg-bg">
       {/* status bar */}
       <div className="flex items-center justify-between px-6 pt-4 pb-1 text-ink">
-        <span className="font-sans text-sm font-semibold tabular-nums">9:41</span>
-        <span className="text-xs font-semibold tracking-tight">●●● ▮</span>
+        <Clock className="font-sans text-sm font-semibold tabular-nums" />
       </div>
 
       {/* header */}

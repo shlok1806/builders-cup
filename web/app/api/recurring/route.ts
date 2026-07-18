@@ -28,6 +28,15 @@ export async function POST(req: Request) {
     | null
   if (!body?.name || !Array.isArray(body.items))
     return NextResponse.json({ error: 'name and items required' }, { status: 400 })
+  // Each item must be {product_id, qty} — otherwise `run` silently produces an
+  // empty cart (every product_id lookup misses) with no error surfaced.
+  const validItems = body.items.every(
+    (it): it is { product_id: string; qty: number } =>
+      !!it && typeof (it as { product_id?: unknown }).product_id === 'string' &&
+      Number.isInteger((it as { qty?: unknown }).qty) && (it as { qty: number }).qty > 0,
+  )
+  if (!validItems)
+    return NextResponse.json({ error: 'each item needs a string product_id and a positive integer qty' }, { status: 400 })
   const db = admin()
   const { data: hh } = await db.from('households').select('id').limit(1).single()
   const { data, error } = await db

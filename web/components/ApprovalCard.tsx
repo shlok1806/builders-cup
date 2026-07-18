@@ -23,7 +23,7 @@ export default function ApprovalCard({ a, onDecide }: { a: ApprovalCardData; onD
           <span className="h-[9px] w-[9px] rounded-full bg-warn" />
           <span className="text-[11.5px] font-semibold uppercase tracking-[0.1em] text-warn">Approval needed</span>
         </div>
-        <Link href="/" className="press grid h-[34px] w-[34px] place-items-center rounded-full border border-line bg-surface text-ink-soft">
+        <Link href="/" aria-label="Close" className="press grid h-[34px] w-[34px] place-items-center rounded-full border border-line bg-surface text-ink-soft">
           <Icon name="x" size={15} strokeWidth={2} />
         </Link>
       </div>
