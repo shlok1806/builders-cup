@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Avatar, CheckBadge, CountUp, Icon, ThemeToggle } from "@/components/ui";
+import { Avatar, CheckBadge, Clock, CountUp, Icon, ThemeToggle } from "@/components/ui";
 import UserSwitcher from "@/components/UserSwitcher";
 import { useMe } from "@/lib/useMe";
 import { categories, household, money, people, totals } from "@/lib/data";
@@ -107,7 +107,7 @@ export default function GroupDashboard() {
     <div className="mx-auto flex min-h-dvh w-full max-w-[440px] flex-col bg-bg">
       {/* status bar */}
       <div className="flex items-center justify-between px-6 pt-4 pb-1 text-ink">
-        <span className="font-sans text-sm font-semibold tabular-nums">9:41</span>
+        <Clock className="font-sans text-sm font-semibold tabular-nums" />
         <span className="text-xs font-semibold tracking-tight">●●● ▮</span>
       </div>
 

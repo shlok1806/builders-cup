@@ -29,6 +29,20 @@ export function Icon({ name, size = 20, strokeWidth = 1.9, className }: { name: 
   );
 }
 
+/* ---------- Status-bar clock (live) ---------- */
+// Empty until mounted so SSR and first client render match (no hydration warn),
+// then the real time; updates each minute.
+export function Clock({ className }: { className?: string }) {
+  const [t, setT] = useState("");
+  useEffect(() => {
+    const fmt = () => new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).replace(/\s?[AP]M$/i, "");
+    setT(fmt());
+    const id = setInterval(() => setT(fmt()), 30000);
+    return () => clearInterval(id);
+  }, []);
+  return <span className={className}>{t}</span>;
+}
+
 /* ---------- Avatar ---------- */
 const BG: Record<string, string> = {
   groceries: "bg-groceries", meat: "bg-meat", alcohol: "bg-alcohol",

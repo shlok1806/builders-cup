@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { Icon } from "@/components/ui";
+import { Clock, Icon } from "@/components/ui";
 import ApprovalCard, { type ApprovalCardData } from "@/components/ApprovalCard";
 import { RealtimeProvider, useApprovals } from "@/components/RealtimeProvider";
 import { money, pendingApproval as seed } from "@/lib/data";
@@ -95,7 +95,7 @@ function Device() {
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-[440px] flex-col bg-bg">
       <div className="flex items-center justify-between px-6 pt-4 pb-1 text-ink">
-        <span className="text-sm font-semibold tabular-nums">9:41</span>
+        <Clock className="text-sm font-semibold tabular-nums" />
         <span className="text-xs font-semibold">●●● ▮</span>
       </div>
       {latest?.recurringCartId && (
