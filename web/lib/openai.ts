@@ -142,6 +142,14 @@ const CATEGORY_WORDS: [RegExp, string][] = [
   [/grocer/, 'groceries'],
 ]
 
+// Infer a split-relevant category from a raw item name (itemized cart entry —
+// the user types "Ribeye Steak", we need "meat" so category exclusions fire).
+// Keyword match against the catalog categories; unknown -> groceries.
+export function categorize(name: string): string {
+  const s = name.toLowerCase()
+  return CATEGORY_WORDS.find(([re]) => re.test(s))?.[1] ?? 'groceries'
+}
+
 // Deterministic keyword compiler — the demo's safety net so policies compile with
 // NO OpenAI key and for phrasings not in the exact-match table below.
 // Order matters: threshold (has an amount) -> weight (share/double) -> exclude.
