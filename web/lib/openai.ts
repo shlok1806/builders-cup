@@ -288,11 +288,14 @@ export const POLICY_TYPES = ['exclude_category', 'exclude_item', 'approval_thres
 export type PolicyType = (typeof POLICY_TYPES)[number]
 export type CompilePolicyResult = { type: PolicyType; params: Record<string, unknown> }
 
-// compilePolicy returns EITHER a compiled policy OR an explicit refusal. It must
-// never force-fit an out-of-scope rule into one of the three types — that silently
-// mangles the split. The route turns { ok:false } into a 422 the settings UI shows.
+// compilePolicy accepts ANY rule — it never refuses. A rule that maps to a
+// structured type (exclude_category/exclude_item/approval_threshold/split_weight)
+// is compiled and enforced by the split engine; anything else is stored as a
+// free-text `custom` rule (recorded + shown, not force-fit into a type that would
+// silently mangle the split). The `{ ok:false }` branch is kept for the route's
+// type-guard but is no longer produced.
 export type PolicyOutcome =
-  | { ok: true; type: PolicyType; params: Record<string, unknown> }
+  | { ok: true; type: PolicyType | 'custom'; params: Record<string, unknown> }
   | { ok: false; reason: string }
 
 export const UNSUPPORTED_HINT =
@@ -478,12 +481,16 @@ async function llmCompilePolicy(sentence: string): Promise<CompilePolicyResult |
 export async function compilePolicy(sentence: string): Promise<PolicyOutcome> {
   try {
     const llm = await llmCompilePolicy(sentence)
-    return llm ? { ok: true, ...llm } : { ok: false, reason: UNSUPPORTED_HINT }
+    if (llm) return { ok: true, ...llm }
   } catch (e) {
     logFallback('compilePolicy', (e as Error).message)
     const fallback = POLICY_FALLBACKS[sentence] ?? heuristicPolicy(sentence)
-    return fallback ? { ok: true, ...fallback } : { ok: false, reason: UNSUPPORTED_HINT }
+    if (fallback) return { ok: true, ...fallback }
   }
+  // Never refuse: store any unmapped rule as a free-text custom policy so the user
+  // can add ANY rule. The split engine ignores custom rules (it only enforces the
+  // structured types), so this records the rule without silently mangling a split.
+  return { ok: true, type: 'custom', params: { text: sentence } }
 }
 
 // Grouped fallbacks for the offline reliability harness (scripts/agent-smoke.ts).
