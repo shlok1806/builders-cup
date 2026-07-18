@@ -1,6 +1,7 @@
 import { admin } from '../supabase'
 import { canonicalize } from '../dedupe'
 import { serpapi } from './adapters/serpapi'
+import { isVendorAllowed } from './allowlist'
 import { getForQuery, normalizeQuery, synthesizeOffers } from './fixtures'
 import type { Adapter, RawOffer } from './types'
 import type { OfferRow } from '../types'
@@ -20,7 +21,7 @@ const ADAPTERS: Adapter[] = [serpapi]
 // Returns the offer rows touched this run; callers use deals.bestOffer() to pick.
 export async function getOffers(
   query: string,
-  opts: { category?: string } = {}
+  opts: { category?: string; allowedVendors?: string[] } = {}
 ): Promise<OfferRow[]> {
   const db = admin()
   const startedAt = new Date().toISOString()
@@ -28,6 +29,15 @@ export async function getOffers(
   const results = await Promise.allSettled(ADAPTERS.map((a) => a.fetchOffers(query)))
   let raws: RawOffer[] = results.flatMap((r) => (r.status === 'fulfilled' ? r.value : []))
   const failures = results.filter((r) => r.status === 'rejected').length
+
+  // Enforce the household's trusted-store allowlist on live offers: an untrusted
+  // vendor can never win a line (safety), and if that empties the live set we fall
+  // through to fixtures/synthetic exactly like any other miss. `allowedVendors`
+  // undefined → DEFAULT_ALLOWLIST (all reputable retailers).
+  const beforeAllow = raws.length
+  raws = raws.filter((r) => isVendorAllowed(r.vendor, opts.allowedVendors))
+  const blocked = beforeAllow - raws.length
+  if (blocked > 0) console.log(`[scrape] "${query}" → allowlist blocked ${blocked} untrusted offer(s)`)
 
   let source = ADAPTERS.map((a) => a.name).join(',')
   if (raws.length === 0) {
