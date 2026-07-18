@@ -13,11 +13,6 @@ import { clearCart, setCart, useCart } from "@/lib/useCart";
 
 const cents = (c: number) => money(c / 100);
 
-// Hard floor before the group can check out — a stand-in for "the cart is big
-// enough to bundle into one order". Later this becomes a smarter bundling
-// threshold; for now it's a flat minimum on total item quantity.
-const MIN_CHECKOUT_ITEMS = 10;
-
 type Item = { id: string; name: string; productName: string; url: string | null; qty: number; unit_price_cents: number; category: string };
 // Identical items (same sourced product + price) collapse into one row shown as
 // "×N"; we keep the underlying line ids so removing the row deletes them all.
@@ -116,8 +111,6 @@ export default function CheckoutPage() {
   const name = (id: string) => byId[id]?.name ?? id.slice(0, 6);
   const groups = items ? groupItems(items) : [];
   const totalQty = items ? items.reduce((s, it) => s + it.qty, 0) : 0;
-  const belowMin = totalQty < MIN_CHECKOUT_ITEMS;
-  const remaining = Math.max(0, MIN_CHECKOUT_ITEMS - totalQty);
   // cartId===null means no running cart at all → empty. Otherwise wait for the fetch.
   const empty = cartId === null || (items != null && items.length === 0);
   const loading = cartId !== null && items == null;
@@ -187,17 +180,9 @@ export default function CheckoutPage() {
               </div>
 
               {!lines && (
-                <>
-                  {belowMin && (
-                    <div className="rounded-2xl border border-line bg-warn-soft px-4 py-3 text-[12.5px] font-semibold text-ink">
-                      Add {remaining} more item{remaining === 1 ? "" : "s"} to check out — the cart needs at least {MIN_CHECKOUT_ITEMS} to bundle into one order.
-                      <Link href="/cart" className="press ml-1 text-accent-ink">Add more ›</Link>
-                    </div>
-                  )}
-                  <button onClick={runSplit} disabled={!!busy || belowMin} className="press w-full rounded-2xl bg-accent py-3 text-[14px] font-semibold text-on-accent disabled:opacity-40">
-                    {busy ?? (belowMin ? `${totalQty} / ${MIN_CHECKOUT_ITEMS} items to check out` : "Split by everyone's rules")}
-                  </button>
-                </>
+                <button onClick={runSplit} disabled={!!busy} className="press w-full rounded-2xl bg-accent py-3 text-[14px] font-semibold text-on-accent disabled:opacity-40">
+                  {busy ?? "Split by everyone's rules"}
+                </button>
               )}
             </section>
 
