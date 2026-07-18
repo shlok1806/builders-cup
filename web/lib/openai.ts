@@ -25,7 +25,6 @@ const SYSTEM = `You turn a household's plain-English shopping request into a str
 Rules:
 - Output only needs the house actually asked for, as {name, category, qty}.
 - category MUST be one of: ${CATEGORIES.join(', ')}.
-- If a requested item appears in recentlyBought, DO NOT add it — put it in "skipped" with a short reason (e.g. "bought recently").
 - Keep names generic and searchable (e.g. "paper towels", not a brand SKU).`
 
 const CART_SCHEMA = {
@@ -75,13 +74,13 @@ const CART_FALLBACKS: Record<string, CartResult> = {
       { name: 'dish soap', category: 'cleaning', qty: 1 },
       { name: 'tequila', category: 'alcohol', qty: 1 },
     ],
-    skipped: [{ name: 'paper towels', reason: 'bought recently' }],
+    skipped: [],
   },
 }
 
 const client = () => new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
-export async function buildCart(text: string, recentNames: string[]): Promise<CartResult> {
+export async function buildCart(text: string): Promise<CartResult> {
   const key = normalizePrompt(text)
   try {
     if (!process.env.OPENAI_API_KEY) throw new Error('no OPENAI_API_KEY')
@@ -89,7 +88,7 @@ export async function buildCart(text: string, recentNames: string[]): Promise<Ca
       model: 'gpt-4o-mini',
       messages: [
         { role: 'system', content: SYSTEM },
-        { role: 'user', content: JSON.stringify({ request: text, recentlyBought: recentNames }) },
+        { role: 'user', content: JSON.stringify({ request: text }) },
       ],
       response_format: {
         type: 'json_schema',
@@ -102,9 +101,6 @@ export async function buildCart(text: string, recentNames: string[]): Promise<Ca
     if (!Array.isArray(parsed.items) || !Array.isArray(parsed.skipped)) {
       throw new Error('bad shape')
     }
-    // Drop anything the model still slipped through against the recent list.
-    const recent = new Set(recentNames.map((n) => n.toLowerCase()))
-    parsed.items = parsed.items.filter((i) => !recent.has(i.name.toLowerCase()))
     return parsed
   } catch {
     return CART_FALLBACKS[key] ?? { items: [], skipped: [] }

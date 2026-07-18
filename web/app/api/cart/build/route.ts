@@ -7,8 +7,7 @@ import { pickBest } from '@/lib/deals'
 // F2 — the agentic cart builder, now web-sourced. buildCart() (LLM) turns free
 // text into needs; deterministic code resolves each need to the cheapest real
 // offer across vendors and writes priced purchase_items. The LLM never sees a
-// price. Recency dedupe: recent purchase names are handed to the model so it
-// skips what the house already bought.
+// price.
 export async function POST(req: Request) {
   const db = admin()
   try {
@@ -32,18 +31,7 @@ export async function POST(req: Request) {
       userId = u?.id
     }
 
-    // Recency dedupe source — names bought in the last 14 days.
-    const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString()
-    const { data: recentRows } = await db
-      .from('purchase_items')
-      .select('name, purchases!inner(household_id, created_at)')
-      .eq('purchases.household_id', hhId)
-      .gte('purchases.created_at', since)
-    const recentNames = Array.from(
-      new Set(((recentRows ?? []) as { name: string }[]).map((r) => r.name))
-    )
-
-    const cart = await buildCart(text, recentNames)
+    const cart = await buildCart(text)
 
     const { data: purchase, error: pErr } = await db
       .from('purchases')

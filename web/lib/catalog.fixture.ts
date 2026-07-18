@@ -45,11 +45,3 @@ export const PRODUCTS: Product[] = [
   { id: "a0000000-0000-0000-0000-000000000050", name: "Trash Bags (box)", category: "household", price_cents: 1000 },
   { id: "a0000000-0000-0000-0000-000000000051", name: "Light Bulbs (4pk)", category: "household", price_cents: 749 },
 ];
-
-// Simulates the last-14-day `purchase_items` join P2 feeds to the cart builder
-// for dedupe. Paper towels here => the "skipped paper towels — bought Tuesday"
-// demo beat lands deterministically.
-export const RECENT_PURCHASE_NAMES: string[] = [
-  "Paper Towels (6 rolls)",
-  "Dish Soap",
-];
