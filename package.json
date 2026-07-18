@@ -11,5 +11,9 @@
     "seed": "npm --prefix web run seed",
     "smoke": "npm --prefix web run smoke",
     "lint": "npm --prefix web run lint"
+  },
+  "dependencies": {
+    "@supabase/ssr": "^0.12.3",
+    "@supabase/supabase-js": "^2.110.7"
   }
 }
