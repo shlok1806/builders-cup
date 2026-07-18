@@ -1,0 +1,15 @@
+{
+  "name": "cartel-root",
+  "private": true,
+  "//": "Delegator only — the app lives in web/. Do NOT add deps or app/lib here.",
+  "scripts": {
+    "dev": "npm --prefix web run dev",
+    "dev:mobile": "npm --prefix web run dev:mobile",
+    "build": "npm --prefix web run build",
+    "start:mobile": "npm --prefix web run start:mobile",
+    "test": "npm --prefix web run test",
+    "seed": "npm --prefix web run seed",
+    "smoke": "npm --prefix web run smoke",
+    "lint": "npm --prefix web run lint"
+  }
+}
