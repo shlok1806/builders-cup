@@ -10,7 +10,11 @@ export const serpapi: Adapter = {
   name: 'serpapi',
   async fetchOffers(query: string): Promise<RawOffer[]> {
     const key = process.env.SERPAPI_KEY
-    if (!key) return []
+    if (!key) {
+      // The single most common reason the demo runs on synthetic prices.
+      console.warn(`[serpapi] "${query}" → SKIPPED: no SERPAPI_KEY set (using fallbacks)`)
+      return []
+    }
 
     const url = new URL('https://serpapi.com/search.json')
     url.searchParams.set('engine', 'google_shopping')
@@ -19,11 +23,24 @@ export const serpapi: Adapter = {
 
     const ctrl = new AbortController()
     const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS)
+    const startedAt = Date.now()
     try {
+      console.log(`[serpapi] "${query}" → calling google_shopping…`)
       const res = await fetch(url, { signal: ctrl.signal })
-      if (!res.ok) return []
-      const json = (await res.json()) as { shopping_results?: SerpShoppingResult[] }
-      return (json.shopping_results ?? [])
+      const ms = Date.now() - startedAt
+      if (!res.ok) {
+        // 401 = bad key, 429 = out of searches — both surface here instead of a silent [].
+        const body = typeof res.text === 'function' ? await res.text().catch(() => '') : ''
+        console.warn(`[serpapi] "${query}" → FAILED: HTTP ${res.status} (${ms}ms) ${body.slice(0, 200)}`)
+        return []
+      }
+      const json = (await res.json()) as { shopping_results?: SerpShoppingResult[]; error?: string }
+      if (json.error) {
+        // SerpAPI returns 200 with an { error } field for some quota/plan issues.
+        console.warn(`[serpapi] "${query}" → FAILED: API error (${ms}ms): ${json.error}`)
+        return []
+      }
+      const offers = (json.shopping_results ?? [])
         .filter((r) => typeof r.extracted_price === 'number' && !!r.source)
         .map((r) => ({
           vendor: r.source as string,
@@ -34,7 +51,14 @@ export const serpapi: Adapter = {
           inStock: true,
           raw: r,
         }))
-    } catch {
+      console.log(
+        `[serpapi] "${query}" → OK (${ms}ms): ${json.shopping_results?.length ?? 0} results, ${offers.length} usable offer(s)`
+      )
+      return offers
+    } catch (e) {
+      const ms = Date.now() - startedAt
+      const reason = ctrl.signal.aborted ? `TIMEOUT after ${TIMEOUT_MS}ms` : (e as Error).message
+      console.warn(`[serpapi] "${query}" → FAILED: ${reason} (${ms}ms)`)
       return []
     } finally {
       clearTimeout(timer)

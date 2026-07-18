@@ -10,6 +10,7 @@ const DAY_MS = 24 * 60 * 60 * 1000
 export type DueItem = {
   productId: string
   name: string
+  category: string
   cadenceDays: number
   lastPurchasedAt: string | null
   dueDate: string | null
@@ -46,7 +47,7 @@ export async function dueItems(householdId: string, horizonDays = 7): Promise<Du
   const db = admin()
   const { data } = await db
     .from('restock_subscriptions')
-    .select('product_id, cadence_days, lead_days, last_purchased_at, products(name)')
+    .select('product_id, cadence_days, lead_days, last_purchased_at, products(name, category)')
     .eq('household_id', householdId)
     .eq('enabled', true)
 
@@ -55,17 +56,19 @@ export async function dueItems(householdId: string, horizonDays = 7): Promise<Du
     cadence_days: number
     lead_days: number
     last_purchased_at: string | null
-    products: { name: string } | { name: string }[] | null
+    products: { name: string; category: string } | { name: string; category: string }[] | null
   }
   const rows = (data ?? []) as unknown as Row[]
   const horizon = Date.now() + horizonDays * DAY_MS
 
   const due: DueItem[] = []
   for (const r of rows) {
-    const name = (Array.isArray(r.products) ? r.products[0] : r.products)?.name ?? 'item'
+    const product = Array.isArray(r.products) ? r.products[0] : r.products
+    const name = product?.name ?? 'item'
+    const category = product?.category ?? 'household'
     if (!r.last_purchased_at) {
       // Never recorded a purchase — treat as due now so it isn't stuck forever.
-      due.push({ productId: r.product_id, name, cadenceDays: r.cadence_days, lastPurchasedAt: null, dueDate: null })
+      due.push({ productId: r.product_id, name, category, cadenceDays: r.cadence_days, lastPurchasedAt: null, dueDate: null })
       continue
     }
     const last = new Date(r.last_purchased_at).getTime()
@@ -74,6 +77,7 @@ export async function dueItems(householdId: string, horizonDays = 7): Promise<Du
       due.push({
         productId: r.product_id,
         name,
+        category,
         cadenceDays: r.cadence_days,
         lastPurchasedAt: r.last_purchased_at,
         dueDate: new Date(dueAt).toISOString(),
