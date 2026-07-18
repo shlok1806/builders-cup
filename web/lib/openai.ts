@@ -158,6 +158,45 @@ export const FALLBACKS = {
   compilePolicy: POLICY_FALLBACKS,
 };
 
+// Deterministic keyword compiler — the demo's safety net so policies compile
+// with NO OpenAI key and for phrasings not in the exact-match table above.
+// Order matters: threshold (has an amount) → weight (share/double) → exclude.
+const CATEGORY_WORDS: [RegExp, string][] = [
+  [/alcohol|booze|beer|wine|liquor|tequila|vodka|whiskey|drinks?/, "alcohol"],
+  [/meat|vegetarian|vegan|beef|steak|chicken|pork|bacon/, "meat"],
+  [/snacks?|chips|candy|soda|junk/, "snacks"],
+  [/cleaning|cleaner|detergent|soap|sponge/, "cleaning"],
+  [/household|paper towels?|toiletr|supplies/, "household"],
+  [/grocer/, "groceries"],
+];
+
+export function heuristicPolicy(sentence: string): CompilePolicyResult | null {
+  const s = sentence.toLowerCase();
+
+  // approval_threshold: an amount + an "ask/approve/over" intent.
+  const amt = s.match(/\$\s?(\d+(?:\.\d{1,2})?)|(\d+(?:\.\d{1,2})?)\s*(?:dollars|bucks)/);
+  if (amt && /(approv|ask me|check with me|confirm|over|above|more than|greater than|threshold|limit)/.test(s)) {
+    const dollars = parseFloat(amt[1] ?? amt[2]);
+    if (dollars > 0) return { type: "approval_threshold", params: { amount_cents: Math.round(dollars * 100) } };
+  }
+
+  // split_weight: "double/triple/twice" or "Nx / N shares", with a share intent.
+  if (/(share|weight|use more|pay more|bigger|larger|double|triple|twice|extra)/.test(s)) {
+    const word = /(double|twice)/.test(s) ? 2 : /triple/.test(s) ? 3 : null;
+    const num = s.match(/(\d+)\s*(?:x\b|times|shares?)/);
+    const w = word ?? (num ? parseInt(num[1], 10) : null);
+    if (w && w >= 1) return { type: "split_weight", params: { weight: w } };
+  }
+
+  // exclude_category: a category word + an exclusion intent.
+  const cat = CATEGORY_WORDS.find(([re]) => re.test(s))?.[1];
+  if (cat && /(don'?t|do not|never|no\b|not\b|exclude|skip|without|split|charge|leave me out)/.test(s)) {
+    return { type: "exclude_category", params: { category: cat } };
+  }
+
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Call A — cart builder (F2)
 // ---------------------------------------------------------------------------
@@ -279,7 +318,7 @@ export async function compilePolicy(
           "Pick exactly one type and fill only its params.",
       );
     } catch {
-      const fallback = POLICY_FALLBACKS[sentence];
+      const fallback = POLICY_FALLBACKS[sentence] ?? heuristicPolicy(sentence);
       if (fallback) return fallback;
       throw new Error(
         `compilePolicy failed after re-ask and no cached fallback for: ${JSON.stringify(sentence)}`,

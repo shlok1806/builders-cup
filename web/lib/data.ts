@@ -30,10 +30,10 @@ export type Person = {
 };
 
 export const people: Person[] = [
-  { id: "ava", name: "Ava Chen", initials: "AC", color: "groceries", share: 268.15, last4: "4242", pct: 30 },
-  { id: "mateo", name: "Mateo Ruiz", initials: "MR", color: "meat", share: 241.3, last4: "8813", pct: 27 },
-  { id: "priya", name: "Priya Nair", initials: "PN", color: "alcohol", share: 205.75, last4: "5190", pct: 23 },
-  { id: "sam", name: "Sam Okafor", initials: "SO", color: "household", share: 178.7, last4: "6607", pct: 20 },
+  { id: "eren", name: "Eren", initials: "ER", color: "groceries", share: 268.15, last4: "4242", pct: 30 },
+  { id: "shlok", name: "Shlok", initials: "SH", color: "meat", share: 241.3, last4: "8813", pct: 27 },
+  { id: "connor", name: "Connor", initials: "CO", color: "alcohol", share: 205.75, last4: "5190", pct: 23 },
+  { id: "john", name: "John", initials: "JO", color: "household", share: 178.7, last4: "6607", pct: 20 },
 ];
 
 export type Category = { name: string; amount: number; color: string; pct: number };
