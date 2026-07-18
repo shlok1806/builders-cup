@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { CartTab, Icon } from "@/components/ui";
 import { money } from "@/lib/data";
+import { useMe } from "@/lib/useMe";
 
 // Household cards (demo): one virtual card per member with their real card
 // last-4/brand and this-month spend, categorised. Data from /api/cards. Card
@@ -25,14 +26,17 @@ type Card = {
 };
 
 export default function Cards() {
+  const { me } = useMe();
   const [cards, setCards] = useState<Card[] | null>(null);
 
   useEffect(() => {
-    fetch("/api/cards")
+    // Server scopes to the signed-in user (cookie); pass ?user once known so the
+    // demo user-switcher reflects immediately. You only ever get your own card.
+    fetch(`/api/cards${me ? `?user=${encodeURIComponent(me)}` : ""}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error("bad status"))))
       .then((d) => setCards(d.cards))
       .catch(() => setCards([]));
-  }, []);
+  }, [me]);
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-[440px] flex-col bg-bg">
@@ -40,13 +44,13 @@ export default function Cards() {
         <Link href="/group" aria-label="Back to group" className="press grid h-[38px] w-[38px] place-items-center rounded-full border border-line bg-surface text-ink-soft">
           <Icon name="back" size={18} />
         </Link>
-        <h1 className="font-display text-lg font-bold tracking-tight text-ink">Household cards</h1>
+        <h1 className="font-display text-lg font-bold tracking-tight text-ink">Your card</h1>
       </header>
 
       <main className="flex-1 space-y-5 px-5 pb-28 pt-1">
         {cards == null && <p className="px-1 text-[13px] font-medium text-ink-soft">Loading…</p>}
         {cards != null && cards.length === 0 && (
-          <p className="rounded-2xl border border-line bg-surface px-4 py-3 text-[13px] font-medium text-ink-soft">No cards yet.</p>
+          <p className="rounded-2xl border border-line bg-surface px-4 py-3 text-[13px] font-medium text-ink-soft">No card spend yet this month.</p>
         )}
 
         {(cards ?? []).map((c, i) => {

@@ -1,11 +1,19 @@
 import { NextResponse } from 'next/server'
+import { cookies } from 'next/headers'
 import { admin } from '@/lib/supabase'
+import { ME_COOKIE } from '@/lib/auth'
 
-// Household "cards" — one per member: their real card last-4/brand + this-month
-// spend broken down by category (what they actually pay post-split). Same source
-// as /api/dashboard (charged item_splits this month), regrouped per user×category.
-export async function GET() {
+// A member's OWN card — their real card last-4/brand + this-month spend broken
+// down by category (what they actually pay post-split). Scoped server-side to the
+// signed-in user (cartel-me cookie), so you only ever see your own card; the
+// ?user= override mirrors the approval device. Same source as /api/dashboard.
+export async function GET(req: Request) {
   const db = admin()
+
+  // Whose card? ?user override (demo device) → cookie. No identity → no cards.
+  const override = new URL(req.url).searchParams.get('user')
+  const meId = override || (await cookies()).get(ME_COOKIE)?.value || null
+  if (!meId) return NextResponse.json({ cards: [] })
 
   const { data: household } = await db
     .from('households')
@@ -15,13 +23,14 @@ export async function GET() {
   if (!household) return NextResponse.json({ error: 'no household' }, { status: 404 })
 
   const [{ data: users }, { data: pms }, { data: splits }] = await Promise.all([
-    db.from('users').select('id, name, color').eq('household_id', household.id),
-    db.from('payment_methods').select('user_id, last4, brand'),
+    db.from('users').select('id, name, color').eq('household_id', household.id).eq('id', meId),
+    db.from('payment_methods').select('user_id, last4, brand').eq('user_id', meId),
     (() => {
       const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString()
       return db
         .from('item_splits')
         .select('amount_cents, user_id, purchase_items!inner(category, purchases!inner(household_id, status, created_at))')
+        .eq('user_id', meId)
         .eq('purchase_items.purchases.household_id', household.id)
         .eq('purchase_items.purchases.status', 'charged')
         .gte('purchase_items.purchases.created_at', monthStart)
