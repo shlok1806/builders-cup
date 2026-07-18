@@ -14,13 +14,15 @@ export async function POST(req: Request) {
   try {
     const { text, items: rawItems, householdId, createdBy } = (await req.json()) as {
       text?: string
-      items?: { name?: string; qty?: number }[]
+      items?: { name?: string; qty?: number; unit?: string }[]
       householdId?: string
       createdBy?: string
     }
 
     // Build the need list: itemized rows take priority over free text.
-    let needs: { name: string; category: string; qty: number }[]
+    // `name` is the search query (matches offer fixtures); `unit` is the typed
+    // measurement (e.g. "12 oz") — display only, never part of the search.
+    let needs: { name: string; unit: string | null; category: string; qty: number }[]
     let skipped: { name: string; reason: string }[]
     let note: string
     if (Array.isArray(rawItems) && rawItems.length) {
@@ -28,15 +30,16 @@ export async function POST(req: Request) {
         .filter((i) => i.name?.trim())
         .map((i) => ({
           name: i.name!.trim(),
+          unit: i.unit?.trim() || null,
           qty: Math.max(1, Math.floor(Number(i.qty) || 1)),
           category: categorize(i.name!),
         }))
       if (!needs.length) return NextResponse.json({ error: 'items required' }, { status: 400 })
       skipped = []
-      note = needs.map((n) => `${n.qty}× ${n.name}`).join(', ')
+      note = needs.map((n) => `${n.qty}× ${n.name}${n.unit ? ` ${n.unit}` : ''}`).join(', ')
     } else if (text) {
       const cart = await buildCart(text)
-      needs = cart.items
+      needs = cart.items.map((n) => ({ ...n, unit: null }))
       skipped = [...cart.skipped]
       note = text
     } else {
@@ -67,6 +70,8 @@ export async function POST(req: Request) {
     const items: {
       id: string
       name: string
+      query: string
+      unit: string | null
       qty: number
       category: string
       unit_price_cents: number
@@ -79,6 +84,9 @@ export async function POST(req: Request) {
     let dealsCompared = 0
 
     for (const need of needs) {
+      // Store/display the measurement folded in; search on the base name only so
+      // "Tortilla Chips" still resolves whether or not a unit was typed.
+      const displayName = need.unit ? `${need.name} ${need.unit}` : need.name
       const offers = await getOffers(need.name, { category: need.category })
       dealsCompared += offers.length
       const best = pickBest(offers)
@@ -93,7 +101,7 @@ export async function POST(req: Request) {
         .insert({
           purchase_id: purchaseId,
           product_id: best.product_id,
-          name: need.name,
+          name: displayName,
           qty: need.qty,
           unit_price_cents: best.price_cents,
           category: need.category,
@@ -105,7 +113,9 @@ export async function POST(req: Request) {
       subtotal += best.price_cents * need.qty
       items.push({
         id: line!.id as string,
-        name: need.name,
+        name: displayName,
+        query: need.name,
+        unit: need.unit,
         qty: need.qty,
         category: need.category,
         unit_price_cents: best.price_cents,
