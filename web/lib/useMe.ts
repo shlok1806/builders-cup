@@ -1,28 +1,31 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { people } from "@/lib/data";
+import { useUsers } from "@/lib/useUsers";
 
-// "Who am I" — no auth. UserSwitcher persists to localStorage; the approval
-// device's `?user=<id>` overrides it (and is never persisted).
+// "Who am I" — no auth. Seeds from the real roster (GET /api/users); the approval
+// device's `?user=<id>` overrides it (never persisted); UserSwitcher persists a
+// pick to localStorage.
 const KEY = "cartel-me";
 
 export function useMe() {
-  const [me, setMeState] = useState<string>(people[0].id);
+  const { users, byId } = useUsers();
+  const [me, setMeState] = useState<string>("");
 
-  // Mount-only read of browser state (URL/localStorage) — kept in an effect so
-  // SSR renders the default and the client hydrates it (no mismatch).
+  // Mount/roster-load: URL override > localStorage > first real user. Runs again
+  // when the async roster arrives so `me` lands on a real id when nothing stored.
   useEffect(() => {
     const override = new URLSearchParams(window.location.search).get("user");
-    const next = override ?? (() => { try { return localStorage.getItem(KEY); } catch { return null; } })();
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrating client-only state on mount
+    const stored = (() => { try { return localStorage.getItem(KEY); } catch { return null; } })();
+    const next = override ?? stored ?? users[0]?.id ?? "";
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrating client-only state
     if (next) setMeState(next);
-  }, []);
+  }, [users]);
 
   const setMe = (id: string) => {
     setMeState(id);
     try { localStorage.setItem(KEY, id); } catch {}
   };
 
-  return { me, setMe, users: people };
+  return { me, setMe, users, byId };
 }

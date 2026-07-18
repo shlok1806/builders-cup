@@ -7,11 +7,13 @@ import CartInput from "@/components/CartInput";
 import CartView from "@/components/CartView";
 import SplitView from "@/components/SplitView";
 import { mockCart, mockSplitLines, type CartResult } from "@/lib/data";
+import { useMe } from "@/lib/useMe";
 import type { SplitLineView } from "@/lib/split-run";
 
 // F2/F4 UI — build cart → split. Wires to P2 (/api/cart/build) and P3
 // (/api/purchase/[id]/split); falls back to seed data so it demos offline.
 export default function CartPage() {
+  const { me } = useMe();
   const [cart, setCart] = useState<CartResult | null>(null);
   const [lines, setLines] = useState<SplitLineView[] | null>(null);
   const [busy, setBusy] = useState(false);
@@ -22,7 +24,7 @@ export default function CartPage() {
       const r = await fetch("/api/cart/build", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, userId: me }),
       });
       setCart(r.ok ? await r.json() : mockCart);
     } catch {
