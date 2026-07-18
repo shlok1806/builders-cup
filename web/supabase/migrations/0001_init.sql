@@ -72,3 +72,10 @@ create table approvals (
 );
 
 alter publication supabase_realtime add table approvals;
+
+-- Realtime anon-delivery gate: RLS-off can suppress anon realtime on some
+-- Supabase versions. Enable RLS on approvals ONLY + a permissive read policy so
+-- the browser (anon key) receives events. All writes go through the service role
+-- (bypasses RLS), so this doesn't affect the split/approval routes.
+alter table approvals enable row level security;
+create policy "realtime read" on approvals for select using (true);
