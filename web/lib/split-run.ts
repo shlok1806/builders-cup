@@ -104,6 +104,17 @@ export async function runSplit(purchaseId: string): Promise<SplitLineView[]> {
     // 'always' verdict: record an approved row so there's an audit trail per run.
     ...autoApproved.map((f) => ({ ...f, status: 'approved' as const })),
   ]
+  // Re-runs (decline path, re-split) must not stack duplicate auto-approved rows.
+  // Scope strictly to this run's auto-approved items so human 'approved' decisions
+  // on other still-flagged lines are preserved (only 'pending' is cleared above).
+  const autoIds = autoApproved.map((f) => f.itemId)
+  if (autoIds.length)
+    await db
+      .from('approvals')
+      .delete()
+      .eq('purchase_id', purchaseId)
+      .eq('status', 'approved')
+      .in('purchase_item_id', autoIds)
   if (toInsert.length)
     await db.from('approvals').insert(
       toInsert.map((f) => ({
