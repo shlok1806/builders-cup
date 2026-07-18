@@ -28,6 +28,7 @@ export default function ApprovalView({ user }: { user: string }) {
 function Device() {
   const { latest, refresh } = useApprovals();
   const [decision, setDecision] = useState<null | "approved" | "declined">(null);
+  const [standing, setStanding] = useState<'always' | 'ask' | 'never'>('ask');
 
   const decide = async (d: "approved" | "declined") => {
     setDecision(d);
@@ -39,6 +40,15 @@ function Device() {
           body: JSON.stringify({ decision: d }),
         });
       } catch {}
+      if (latest.recurringCartId && standing !== 'ask') {
+        try {
+          await fetch(`/api/recurring/${latest.recurringCartId}/decision`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ approverId: latest.approverId, decision: standing }),
+          });
+        } catch {}
+      }
       refresh();
     }
   };
@@ -86,6 +96,24 @@ function Device() {
         <span className="text-sm font-semibold tabular-nums">9:41</span>
         <span className="text-xs font-semibold">●●● ▮</span>
       </div>
+      {latest?.recurringCartId && (
+        <div className="px-6 pb-1 text-[13px] font-medium text-ink-soft">
+          <p className="mb-1.5">For <span className="font-semibold text-ink">{latest.recurringCartName}</span> next time:</p>
+          <div className="flex gap-2">
+            {(['always', 'ask', 'never'] as const).map((opt) => (
+              <button
+                key={opt}
+                onClick={() => setStanding(opt)}
+                className={`press flex-1 rounded-xl border py-2 text-[13px] font-semibold capitalize ${
+                  standing === opt ? 'border-accent bg-accent text-on-accent' : 'border-line bg-surface text-ink-soft'
+                }`}
+              >
+                {opt}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <ApprovalCard a={a} onDecide={decide} />
     </div>
   );

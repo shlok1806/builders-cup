@@ -93,6 +93,17 @@ async function main() {
   const { data: products } = await db.from('products').insert(catalog).select('id, name, category, price_cents')
   const prod = (name: string) => products!.find((p) => p.name === name)!
 
+  // Recurring cart so the reorder flow has something to run in the demo.
+  await db.from('recurring_carts').insert({
+    name: 'Weekly groceries',
+    owner_id: uid('Sam'),
+    household_id: householdId,
+    items: [
+      { product_id: prod('Bananas').id, qty: 2 },
+      { product_id: prod('Oat Milk').id, qty: 1 },
+    ],
+  })
+
   // Payment methods — real Stripe if a key is present, else placeholders (P4 swaps in).
   const stripeKey = process.env.STRIPE_SECRET_KEY
   for (const u of users!) {

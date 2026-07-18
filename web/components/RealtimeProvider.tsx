@@ -12,6 +12,8 @@ export type Pending = {
   rule: string;
   itemName: string;
   amountCents: number;
+  recurringCartId?: string;
+  recurringCartName?: string;
 };
 
 const Ctx = createContext<{ pending: Pending[]; latest: Pending | null; refresh: () => void }>({
