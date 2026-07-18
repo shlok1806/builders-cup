@@ -65,6 +65,12 @@ export default function Settings() {
     if (r.ok) window.location.href = "/cart";
   };
 
+  const remove = async (id: string) => {
+    if (!me) return;
+    await fetch(`/api/policy/${id}?user=${encodeURIComponent(me)}`, { method: "DELETE" });
+    await load();
+  };
+
   const add = async () => {
     const t = text.trim();
     if (!t || !me) return;
@@ -101,9 +107,14 @@ export default function Settings() {
             </p>
           )}
           {policies.map((p) => (
-            <div key={p.id} className="rounded-[18px] border border-line bg-surface px-4 py-3.5">
-              <div className="text-[14px] font-semibold text-ink">{describe(p)}</div>
-              <div className="mt-0.5 text-[12px] font-medium text-ink-faint">&ldquo;{p.source_text}&rdquo;</div>
+            <div key={p.id} className="flex items-start gap-3 rounded-[18px] border border-line bg-surface px-4 py-3.5">
+              <div className="min-w-0 flex-1">
+                <div className="text-[14px] font-semibold text-ink">{describe(p)}</div>
+                <div className="mt-0.5 text-[12px] font-medium text-ink-faint">&ldquo;{p.source_text}&rdquo;</div>
+              </div>
+              <button onClick={() => remove(p.id)} aria-label="Delete rule" className="press -mr-1 mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full text-ink-faint hover:text-warn">
+                <Icon name="x" size={16} />
+              </button>
             </div>
           ))}
         </section>
