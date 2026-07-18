@@ -231,7 +231,7 @@ export default function GroupDashboard() {
         <section className="a-rise rounded-[22px] border border-line bg-surface px-5 py-[18px]" style={{ animationDelay: "200ms" }}>
           <div className="flex items-center justify-between">
             <h2 className="font-display text-base font-bold tracking-tight text-ink">Where it went</h2>
-            <span className="text-[12.5px] font-medium text-ink-faint">{cats.length} categories</span>
+            <Link href="/analytics" className="press text-[13px] font-semibold text-accent-ink">Details ›</Link>
           </div>
           <div className="mt-4 flex h-4 gap-[3px]">
             {cats.map((c, i) => (
