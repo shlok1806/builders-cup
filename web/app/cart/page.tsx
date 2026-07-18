@@ -5,28 +5,21 @@ import { useState } from "react";
 import { Icon } from "@/components/ui";
 import { money } from "@/lib/data";
 
-// F2/F4/F8 UI — itemized cart: type each item, how many, and the size/measure
-// (oz, ml, pack…). The agent sources the cheapest vendor and fills in the price.
-// Then split by everyone's rules and read the savings. Auto-restock is one tap
-// and always lands on the approval screen — it never charges here.
+// F2/F4/F8 UI — describe what the house needs in plain language; the agent parses
+// it, folds in what's running low, sources the cheapest vendor per line, and
+// composes the cart. Then split by everyone's rules and read the savings.
+// Auto-restock is one tap and always lands on the approval screen.
 
 const cents = (c: number) => money(c / 100);
-// Names match the cached offer fixtures so the sample always prices without a
-// live SERPAPI_KEY. Tequila ($52) trips the alcohol exclusion + $40 threshold beats.
-const SAMPLE: Row[] = [
-  { name: "Tortilla Chips", unit: "10 oz", qty: 2 },
-  { name: "Tequila", unit: "750 ml", qty: 1 },
-  { name: "Coffee", unit: "28 oz", qty: 1 },
-  { name: "Dish Soap", unit: "", qty: 1 },
+const EXAMPLES = [
+  "restock + snacks for Friday",
+  "we're low on coffee and dish soap",
+  "snacks and drinks for game night",
 ];
-const blank = (): Row => ({ name: "", unit: "", qty: 1 });
 
-type Row = { name: string; unit: string; qty: number };
 type BuiltItem = {
   id: string;
   name: string;
-  query: string;
-  unit: string | null;
   qty: number;
   category: string;
   unit_price_cents: number;
@@ -34,12 +27,14 @@ type BuiltItem = {
   url: string | null;
   offersCount: number;
   runnerUpCents: number | null;
+  reason: string | null;
 };
 type BuildResp = {
   purchaseId: string;
   items: BuiltItem[];
   skipped: { name: string; reason: string }[];
   dealsCompared: number;
+  overBudget: boolean;
 };
 type SplitLine = {
   itemId: string;
@@ -51,37 +46,26 @@ type SplitLine = {
 };
 
 export default function CartPage() {
-  const [rows, setRows] = useState<Row[]>([blank(), blank()]);
+  const [text, setText] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [build, setBuild] = useState<BuildResp | null>(null);
   const [lines, setLines] = useState<SplitLine[] | null>(null);
   const [saved, setSaved] = useState<number | null>(null);
   const [auto, setAuto] = useState<string | null>(null);
 
-  const setRow = (i: number, patch: Partial<Row>) =>
-    setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
-  const addRow = () => setRows((rs) => [...rs, blank()]);
-  const removeRow = (i: number) => setRows((rs) => (rs.length > 1 ? rs.filter((_, j) => j !== i) : rs));
   const reset = () => { setBuild(null); setLines(null); setSaved(null); };
-
-  // Match a build result / skip back to the row the user typed (by base name).
-  const priced = (name: string) =>
-    build?.items.find((it) => it.query.toLowerCase() === name.trim().toLowerCase());
-  const skippedReason = (name: string) =>
-    build?.skipped.find((s) => s.name.toLowerCase() === name.trim().toLowerCase())?.reason;
-
   const total = build ? build.items.reduce((s, it) => s + it.unit_price_cents * it.qty, 0) : 0;
-  const canBuild = rows.some((r) => r.name.trim());
 
-  async function runBuild() {
-    const items = rows.filter((r) => r.name.trim()).map((r) => ({ name: r.name, unit: r.unit, qty: r.qty }));
-    if (!items.length) return;
-    setBusy("Sourcing best deals…");
+  async function runBuild(prompt: string) {
+    const q = prompt.trim();
+    if (!q) return;
+    setText(q);
+    setBusy("Sourcing the cheapest cart…");
     reset(); setAuto(null);
     const r = await fetch("/api/cart/build", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ items }),
+      body: JSON.stringify({ text: q }),
     });
     setBuild(await r.json());
     setBusy(null);
@@ -99,15 +83,12 @@ export default function CartPage() {
 
   async function runAuto() {
     setBusy("Agent checking what's running low…");
-    reset();
+    reset(); setText("");
     const r = await fetch("/api/auto-restock", { method: "POST" });
     const j = await r.json();
     setAuto(j.purchaseId ? `Drafted ${j.lineCount} items ($${(j.subtotalCents / 100).toFixed(2)}) — awaiting approval` : "Nothing due this week");
     setBusy(null);
   }
-
-  const inputBase =
-    "rounded-xl border border-line bg-surface-2 text-ink outline-none placeholder:text-ink-faint focus:border-accent";
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-[440px] flex-col bg-bg">
@@ -124,76 +105,33 @@ export default function CartPage() {
       </header>
 
       <main className="flex-1 space-y-4 px-5 pb-28 pt-1">
-        {/* itemized input — one card per item */}
-        <section className="a-rise space-y-2.5" style={{ animationDelay: "40ms" }}>
-          {rows.map((row, i) => {
-            const p = priced(row.name);
-            const reason = skippedReason(row.name);
-            return (
-              <div key={i} className="rounded-[18px] border border-line bg-surface p-3">
-                <div className="flex items-center gap-2">
-                  <input
-                    value={row.name}
-                    onChange={(e) => setRow(i, { name: e.target.value })}
-                    placeholder="Item — e.g. tortilla chips"
-                    className={`min-w-0 flex-1 bg-transparent px-1 text-[15px] font-semibold text-ink outline-none placeholder:font-medium placeholder:text-ink-faint`}
-                  />
-                  {rows.length > 1 && (
-                    <button onClick={() => removeRow(i)} aria-label="Remove item" className="press grid h-6 w-6 place-items-center rounded-full text-ink-faint hover:text-ink">
-                      <Icon name="x" size={14} />
-                    </button>
-                  )}
-                </div>
-                <div className="mt-2 flex items-center gap-2">
-                  <input
-                    type="number"
-                    min={1}
-                    inputMode="numeric"
-                    value={row.qty}
-                    onChange={(e) => setRow(i, { qty: Math.max(1, Math.floor(Number(e.target.value) || 1)) })}
-                    aria-label="Quantity"
-                    className={`${inputBase} w-12 px-2 py-2 text-center text-[14px] font-semibold tabular-nums`}
-                  />
-                  <span className="text-[13px] font-medium text-ink-faint">×</span>
-                  <input
-                    value={row.unit}
-                    onChange={(e) => setRow(i, { unit: e.target.value })}
-                    placeholder="size — oz, ml, pack…"
-                    aria-label="Size or measurement"
-                    className={`${inputBase} min-w-0 flex-1 px-3 py-2 text-[14px] font-medium`}
-                  />
-                  <span className="ml-1 w-[74px] shrink-0 text-right font-display text-[15px] font-bold tabular-nums text-ink">
-                    {p ? cents(p.unit_price_cents * p.qty) : reason ? <span className="text-[11px] font-medium text-ink-faint">no offer</span> : <span className="text-ink-faint">—</span>}
-                  </span>
-                </div>
-                {p && (
-                  <div className="mt-2 flex flex-wrap items-center gap-1.5 px-0.5 text-[11px] font-medium text-ink-faint">
-                    <span className="rounded bg-surface-2 px-1.5 py-0.5 text-positive">{p.vendor}</span>
-                    {p.offersCount > 1 && <span>cheapest of {p.offersCount}</span>}
-                    <span className="rounded bg-surface-2 px-1.5 py-0.5">{p.category}</span>
-                    {p.qty > 1 && <span>· {cents(p.unit_price_cents)} each</span>}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-
-          <div className="flex items-center gap-3 px-1">
-            <button onClick={addRow} className="press flex items-center gap-1.5 text-[13px] font-semibold text-accent-ink">
-              <Icon name="plus" size={14} /> Add item
-            </button>
-            <button onClick={() => { setRows(SAMPLE.map((r) => ({ ...r }))); reset(); }} className="press text-[13px] font-medium text-ink-faint">
-              Use sample
-            </button>
-            {build && <span className="ml-auto text-[13px] font-semibold tabular-nums text-ink">Total {cents(total)}</span>}
+        {/* prompt */}
+        <section className="a-rise rounded-[24px] border border-line bg-surface p-4" style={{ animationDelay: "40ms" }}>
+          <div className="mb-2 flex items-center gap-1.5 px-1 text-[12px] font-semibold text-ink-soft">
+            <Icon name="cart" size={14} className="text-accent-ink" />
+            Tell the agent what the house needs
           </div>
-
-          <button onClick={runBuild} disabled={!!busy || !canBuild} className="press w-full rounded-2xl bg-accent py-3 text-[14px] font-semibold text-on-accent disabled:opacity-40">
-            Build cart
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") runBuild(text); }}
+            placeholder="e.g. restock the apartment and grab snacks for Friday"
+            rows={3}
+            className="w-full resize-none bg-transparent px-1 text-[16px] font-medium leading-snug text-ink outline-none placeholder:text-ink-faint"
+          />
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {EXAMPLES.map((ex) => (
+              <button key={ex} onClick={() => runBuild(ex)} disabled={!!busy} className="press rounded-full bg-surface-2 px-2.5 py-1.5 text-[11.5px] font-medium text-ink-soft disabled:opacity-40">
+                {ex}
+              </button>
+            ))}
+          </div>
+          <button onClick={() => runBuild(text)} disabled={!!busy || !text.trim()} className="press mt-3 w-full rounded-2xl bg-accent py-3 text-[14px] font-semibold text-on-accent disabled:opacity-40">
+            {busy ? "Working…" : "Build cart"}
           </button>
         </section>
 
-        {busy && <p className="px-1 text-[13px] font-medium text-ink-soft">{busy}</p>}
+        {busy && <p className="a-rise px-1 text-[13px] font-medium text-ink-soft">{busy}</p>}
         {auto && (
           <div className="a-rise flex items-center gap-2 rounded-2xl border border-line bg-warn-soft px-4 py-3 text-[13px] font-semibold text-ink">
             <span className="rounded-full bg-warn px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">Due this week</span>
@@ -201,13 +139,67 @@ export default function CartPage() {
           </div>
         )}
 
+        {/* composed cart */}
         {build && (
-          <div className="a-rise space-y-2.5" style={{ animationDelay: "40ms" }}>
-            <p className="px-1 text-[12px] font-medium text-ink-faint">compared {build.dealsCompared} offers across vendors</p>
-            <button onClick={runSplitAndSummary} disabled={!!busy || build.items.length === 0} className="press w-full rounded-2xl border border-accent bg-transparent py-3 text-[14px] font-semibold text-accent-ink disabled:opacity-40">
-              Split by everyone&apos;s rules
-            </button>
-          </div>
+          <section className="a-rise space-y-2.5" style={{ animationDelay: "60ms" }}>
+            <div className="flex items-center justify-between px-1">
+              <h2 className="font-display text-base font-bold tracking-tight text-ink">Cart</h2>
+              <span className="text-[12px] font-medium text-ink-faint">compared {build.dealsCompared} offers</span>
+            </div>
+
+            {build.overBudget && (
+              <div className="rounded-2xl border border-line bg-warn-soft px-4 py-2.5 text-[12.5px] font-semibold text-ink">
+                Trimmed to stay within the monthly budget.
+              </div>
+            )}
+
+            {build.items.length > 0 ? (
+              <div className="overflow-hidden rounded-[22px] border border-line bg-surface">
+                {build.items.map((it, i) => (
+                  <div key={it.id} className={`flex items-start gap-3 px-4 py-3 ${i < build.items.length - 1 ? "border-b border-line" : ""}`}>
+                    <div className="min-w-0 flex-1 leading-tight">
+                      <div className="truncate text-sm font-semibold text-ink">{it.qty > 1 ? `${it.qty}× ` : ""}{it.name}</div>
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] font-medium text-ink-faint">
+                        <span className="rounded bg-surface-2 px-1.5 py-0.5 text-positive">{it.vendor}</span>
+                        {it.offersCount > 1 && <span>cheapest of {it.offersCount}</span>}
+                        {it.reason && <span className="rounded bg-surface-2 px-1.5 py-0.5 text-accent-ink">{it.reason}</span>}
+                      </div>
+                    </div>
+                    <div className="text-right leading-tight">
+                      <div className="font-display text-[15px] font-bold tabular-nums text-ink">{cents(it.unit_price_cents * it.qty)}</div>
+                      {it.runnerUpCents != null && it.runnerUpCents > it.unit_price_cents && (
+                        <div className="text-[11px] font-medium text-ink-faint line-through tabular-nums">{cents(it.runnerUpCents * it.qty)}</div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between bg-surface-2 px-4 py-2.5">
+                  <span className="text-[12.5px] font-semibold text-ink-soft">Subtotal</span>
+                  <span className="font-display text-[15px] font-bold tabular-nums text-ink">{cents(total)}</span>
+                </div>
+              </div>
+            ) : (
+              <p className="rounded-2xl border border-line bg-surface px-4 py-3 text-[13px] font-medium text-ink-soft">
+                Couldn&apos;t source any of those — try naming items more generically.
+              </p>
+            )}
+
+            {build.skipped.length > 0 && (
+              <div className="rounded-2xl border border-line bg-surface-2 px-4 py-3">
+                {build.skipped.map((s) => (
+                  <div key={s.name} className="flex items-center gap-2 text-[12.5px] font-medium text-ink-soft">
+                    <Icon name="x" size={13} /> Skipped {s.name} — {s.reason}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {build.items.length > 0 && (
+              <button onClick={runSplitAndSummary} disabled={!!busy} className="press w-full rounded-2xl bg-accent py-3 text-[14px] font-semibold text-on-accent disabled:opacity-40">
+                Split by everyone&apos;s rules
+              </button>
+            )}
+          </section>
         )}
 
         {/* split view */}

@@ -29,11 +29,15 @@ export type Person = {
   pct: number;
 };
 
+// ids are the REAL seeded users.id UUIDs (not friendly slugs) so this fallback
+// roster can drive login on its own: the mock auth stores a users.id in the
+// cookie, and every downstream route keys on it as a FK. Keep these in sync with
+// the seeded household — regenerate via `GET /api/users` if you re-seed.
 export const people: Person[] = [
-  { id: "eren", name: "Eren", initials: "ER", color: "groceries", share: 268.15, last4: "4242", pct: 30 },
-  { id: "shlok", name: "Shlok", initials: "SH", color: "meat", share: 241.3, last4: "8813", pct: 27 },
-  { id: "connor", name: "Connor", initials: "CO", color: "alcohol", share: 205.75, last4: "5190", pct: 23 },
-  { id: "john", name: "John", initials: "JO", color: "household", share: 178.7, last4: "6607", pct: 20 },
+  { id: "9b364df5-a9da-4fe1-8014-50ec82ba1d4c", name: "Eren", initials: "ER", color: "groceries", share: 268.15, last4: "4242", pct: 30 },
+  { id: "a6d24442-a5b6-4303-b4d4-f4601b6e4abf", name: "Shlok", initials: "SH", color: "meat", share: 241.3, last4: "8813", pct: 27 },
+  { id: "002b83e3-d554-4619-8e56-ab797a489720", name: "Connor", initials: "CO", color: "alcohol", share: 205.75, last4: "5190", pct: 23 },
+  { id: "e5066087-dd09-4c88-b51d-064f7cc8d33b", name: "John", initials: "JO", color: "household", share: 178.7, last4: "6607", pct: 20 },
 ];
 
 export type Category = { name: string; amount: number; color: string; pct: number };
