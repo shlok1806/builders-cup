@@ -62,7 +62,7 @@ export default function Settings() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ userId: me }),
     });
-    if (r.ok) window.location.href = "/cart";
+    if (r.ok) window.location.assign("/cart");
   };
 
   const add = async () => {

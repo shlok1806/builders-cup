@@ -59,6 +59,9 @@ export function useCountUp(target: number, { duration = 900, decimals = 2 }: { d
   const raf = useRef<number | null>(null);
   useEffect(() => {
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    // Reduced-motion: snap to the final value. Intentional sync with a
+    // browser-only API (matchMedia) that isn't available during SSR.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (reduce) { setVal(target); return; }
     const start = performance.now();
     const tick = (now: number) => {
@@ -85,6 +88,9 @@ export function ThemeToggle() {
   useEffect(() => {
     const el = document.documentElement;
     const explicit = el.getAttribute("data-theme");
+    // Resolve the actual theme from the DOM / OS preference after hydration —
+    // both are browser-only, so this can't be a lazy useState initializer.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDark(explicit ? explicit === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches);
   }, []);
   const toggle = () => {
