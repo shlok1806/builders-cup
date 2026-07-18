@@ -1,22 +1,47 @@
 import { NextResponse } from 'next/server'
 import { admin } from '@/lib/supabase'
-import { buildCart } from '@/lib/openai'
+import { buildCart, categorize } from '@/lib/openai'
 import { getOffers } from '@/lib/scrape'
 import { pickBest } from '@/lib/deals'
 
-// F2 — the agentic cart builder, now web-sourced. buildCart() (LLM) turns free
-// text into needs; deterministic code resolves each need to the cheapest real
-// offer across vendors and writes priced purchase_items. The LLM never sees a
-// price.
+// F2 — the cart builder. Two entry shapes, same pricing path:
+//  - itemized: { items: [{name, qty}] } — the user typed rows; we infer category.
+//  - free text: { text } — buildCart() (LLM) turns it into needs.
+// Deterministic code resolves each need to the cheapest real offer across vendors
+// and writes priced purchase_items. The LLM never sees a price.
 export async function POST(req: Request) {
   const db = admin()
   try {
-    const { text, householdId, createdBy } = (await req.json()) as {
+    const { text, items: rawItems, householdId, createdBy } = (await req.json()) as {
       text?: string
+      items?: { name?: string; qty?: number }[]
       householdId?: string
       createdBy?: string
     }
-    if (!text) return NextResponse.json({ error: 'text required' }, { status: 400 })
+
+    // Build the need list: itemized rows take priority over free text.
+    let needs: { name: string; category: string; qty: number }[]
+    let skipped: { name: string; reason: string }[]
+    let note: string
+    if (Array.isArray(rawItems) && rawItems.length) {
+      needs = rawItems
+        .filter((i) => i.name?.trim())
+        .map((i) => ({
+          name: i.name!.trim(),
+          qty: Math.max(1, Math.floor(Number(i.qty) || 1)),
+          category: categorize(i.name!),
+        }))
+      if (!needs.length) return NextResponse.json({ error: 'items required' }, { status: 400 })
+      skipped = []
+      note = needs.map((n) => `${n.qty}× ${n.name}`).join(', ')
+    } else if (text) {
+      const cart = await buildCart(text)
+      needs = cart.items
+      skipped = [...cart.skipped]
+      note = text
+    } else {
+      return NextResponse.json({ error: 'text or items required' }, { status: 400 })
+    }
 
     // Resolve household (no auth — default to the seeded one).
     let hhId = householdId
@@ -31,11 +56,9 @@ export async function POST(req: Request) {
       userId = u?.id
     }
 
-    const cart = await buildCart(text)
-
     const { data: purchase, error: pErr } = await db
       .from('purchases')
-      .insert({ household_id: hhId, status: 'building', subtotal_cents: 0, note: text, created_by: userId })
+      .insert({ household_id: hhId, status: 'building', subtotal_cents: 0, note, created_by: userId })
       .select('id')
       .single()
     if (pErr) throw pErr
@@ -52,11 +75,10 @@ export async function POST(req: Request) {
       offersCount: number
       runnerUpCents: number | null
     }[] = []
-    const skipped = [...cart.skipped]
     let subtotal = 0
     let dealsCompared = 0
 
-    for (const need of cart.items) {
+    for (const need of needs) {
       const offers = await getOffers(need.name, { category: need.category })
       dealsCompared += offers.length
       const best = pickBest(offers)
