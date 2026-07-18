@@ -3,17 +3,22 @@
 // STRIPE_SECRET_KEY so P3 can seed + verify without it (placeholder PM rows).
 import { admin } from '../lib/supabase'
 import { computeSplit } from '../lib/split'
+import { canonicalKey } from '../lib/dedupe'
 import type { Member, Line } from '../lib/types'
 
 const db = admin()
 
 async function wipe() {
-  // FK order.
+  // FK order. offers is after purchase_items (purchase_items.offer_id -> offers)
+  // and before products (offers.product_id -> products).
   for (const t of [
     'charges',
     'item_splits',
     'approvals',
     'purchase_items',
+    'offers',
+    'restock_subscriptions',
+    'scrape_runs',
     'purchases',
     'policies',
     'payment_methods',
@@ -89,9 +94,42 @@ async function main() {
     { name: 'Paper Towels', category: 'household', price_cents: 1800, unit: '6-pack' },
     { name: 'Dish Soap', category: 'cleaning', price_cents: 450, unit: 'bottle' },
     { name: 'Sparkling Water', category: 'snacks', price_cents: 800, unit: '12-pack' },
+    { name: 'Coffee', category: 'groceries', price_cents: 1549, unit: '28 oz' },
   ]
-  const { data: products } = await db.from('products').insert(catalog).select('id, name, category, price_cents')
+  const { data: products } = await db
+    .from('products')
+    .insert(catalog.map((c) => ({ ...c, canonical_key: canonicalKey(c.name, c.unit) })))
+    .select('id, name, category, price_cents')
   const prod = (name: string) => products!.find((p) => p.name === name)!
+
+  // Multi-vendor offers per product — the cheapest is the product's reference
+  // price, with pricier runners-up so "cheapest of N" and the savings number are
+  // real. deals.bestOffer / savingsVsSecond read these.
+  const OFFER_VENDORS = ['Walmart', 'Target', 'Amazon'] as const
+  const offerRows = catalog.flatMap((c) => {
+    const base = c.price_cents
+    const ladder = [base, Math.round(base * 1.1), Math.round(base * 1.18)]
+    return OFFER_VENDORS.map((vendor, i) => ({
+      product_id: prod(c.name).id,
+      vendor,
+      url: null,
+      price_cents: ladder[i],
+      unit: c.unit,
+      in_stock: true,
+    }))
+  })
+  await db.from('offers').insert(offerRows)
+
+  // Restock subscriptions — the autonomous agent's watchlist. Coffee + paper
+  // towels are backdated so they fall "due" within the 7-day horizon; dish soap
+  // is a longer cadence bought recently, so the agent correctly leaves it out.
+  const dayISO = (d: number) =>
+    new Date(Date.now() - d * 24 * 60 * 60 * 1000).toISOString()
+  await db.from('restock_subscriptions').insert([
+    { household_id: householdId, product_id: prod('Coffee').id, cadence_days: 14, lead_days: 2, last_purchased_at: dayISO(13) },
+    { household_id: householdId, product_id: prod('Paper Towels').id, cadence_days: 10, lead_days: 2, last_purchased_at: dayISO(6) },
+    { household_id: householdId, product_id: prod('Dish Soap').id, cadence_days: 30, lead_days: 2, last_purchased_at: dayISO(6) },
+  ])
 
   // Payment methods — real Stripe if a key is present, else placeholders (P4 swaps in).
   const stripeKey = process.env.STRIPE_SECRET_KEY
