@@ -159,6 +159,7 @@ describe('POST /api/purchase/[id]/checkout', () => {
           error: null,
         }),
       },
+      { table: 'charges', query: returnsQuery({ data: [], error: null }) },
       { table: 'charges', query: ledger },
       { table: 'purchases', query: purchaseUpdate },
     )
@@ -218,6 +219,7 @@ describe('POST /api/purchase/[id]/checkout', () => {
           error: null,
         }),
       },
+      { table: 'charges', query: returnsQuery({ data: [], error: null }) },
       { table: 'charges', query: ledger },
       { table: 'purchases', query: purchaseUpdate },
     )
@@ -270,6 +272,7 @@ describe('POST /api/purchase/[id]/checkout', () => {
           error: null,
         }),
       },
+      { table: 'charges', query: returnsQuery({ data: [], error: null }) },
       { table: 'charges', query: ledger },
       { table: 'purchases', query: purchaseUpdate },
     )

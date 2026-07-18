@@ -118,8 +118,8 @@ export default function CartPage() {
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-[440px] flex-col bg-bg">
       <header className="flex items-center gap-3 px-5 pt-5 pb-3">
-        <Link href="/group" className="press grid h-9 w-9 place-items-center rounded-full border border-line bg-surface text-ink-soft">
-          <Icon name="home" size={18} />
+        <Link href="/group" aria-label="Back to group" className="press grid h-9 w-9 place-items-center rounded-full border border-line bg-surface text-ink-soft">
+          <Icon name="back" size={18} />
         </Link>
         <h1 className="font-display text-lg font-bold tracking-tight text-ink">{title}</h1>
       </header>
@@ -154,6 +154,15 @@ export default function CartPage() {
             <Icon name="check" size={19} strokeWidth={2.6} />
             {busy ? "Charging…" : awaiting ? "Blocked until approved" : "Check out"}
           </button>
+        </Footer>
+      )}
+
+      {charges && (
+        <Footer>
+          <Link href="/group" className="press flex w-full items-center justify-center gap-2 rounded-2xl bg-accent py-4 text-[15.5px] font-semibold text-on-accent">
+            <Icon name="check" size={19} strokeWidth={2.6} />
+            Done
+          </Link>
         </Footer>
       )}
     </div>

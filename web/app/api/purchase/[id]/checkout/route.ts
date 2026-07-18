@@ -93,10 +93,26 @@ export async function POST(_request: Request, context: RouteContext) {
     return NextResponse.json({ error: paymentMethodError.message }, { status: 500 })
   }
 
+  // Users already charged successfully for this purchase (e.g. a prior partial
+  // checkout, then a re-split). Never charge them again — reuse the ledger row.
+  const { data: priorCharges } = await supabase
+    .from('charges')
+    .select('user_id,amount_cents,status,stripe_payment_intent_id')
+    .eq('purchase_id', purchaseId)
+    .eq('status', 'succeeded')
+    .returns<ChargeRow[]>()
+  const succeededByUser = new Map((priorCharges ?? []).map((c) => [c.user_id, c]))
+
   const paymentMethodByUser = new Map((paymentMethods ?? []).map((method) => [method.user_id, method]))
   const charges: CheckoutCharge[] = []
 
   for (const total of totals) {
+    const prior = succeededByUser.get(total.userId)
+    if (prior) {
+      charges.push({ userId: total.userId, amountCents: prior.amount_cents, status: 'succeeded', stripePaymentIntentId: prior.stripe_payment_intent_id })
+      continue
+    }
+
     const paymentMethod = paymentMethodByUser.get(total.userId)
     if (!paymentMethod) {
       charges.push({ userId: total.userId, amountCents: total.amountCents, status: 'failed', stripePaymentIntentId: null })

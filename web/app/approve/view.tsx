@@ -29,10 +29,12 @@ function Device() {
   const { latest, refresh } = useApprovals();
   const [decision, setDecision] = useState<null | "approved" | "declined">(null);
   const [standing, setStanding] = useState<'always' | 'ask' | 'never'>('ask');
+  const [chargedCents, setChargedCents] = useState<number | null>(null);
 
   const decide = async (d: "approved" | "declined") => {
     setDecision(d);
     if (latest) {
+      setChargedCents(latest.amountCents); // capture before refresh() clears `latest`
       try {
         await fetch(`/api/approval/${latest.id}`, {
           method: "POST",
@@ -74,7 +76,7 @@ function Device() {
           </h1>
           <p className="mt-2 text-[15px] font-medium text-ink-soft">
             {approved
-              ? `Your ${money(seed.yourShare)} share was charged. The cart is unblocked.`
+              ? `Your ${money((chargedCents ?? Math.round(seed.yourShare * 100)) / 100)} share was charged. The cart is unblocked.`
               : "Removed from the cart. Everyone will be notified."}
           </p>
         </div>

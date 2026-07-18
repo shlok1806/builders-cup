@@ -193,7 +193,9 @@ export function heuristicPolicy(sentence: string): CompilePolicyResult | null {
 
   // exclude_category: a category word + an exclusion intent.
   const cat = CATEGORY_WORDS.find(([re]) => re.test(s))?.[1];
-  if (cat && /(don'?t|do not|never|no\b|not\b|exclude|skip|without|split|charge|leave me out)/.test(s)) {
+  // Intent words must signal EXCLUSION. Bare "split"/"charge" are inclusive
+  // ("charge me for alcohol") — only their negated forms below count.
+  if (cat && /(don'?t|do not|never|no\b|not\b|exclude|skip|without|leave me out|don'?t (?:split|charge)|no (?:split|charge))/.test(s)) {
     return { type: "exclude_category", params: { category: cat } };
   }
 
@@ -205,10 +207,16 @@ export function heuristicPolicy(sentence: string): CompilePolicyResult | null {
 // ---------------------------------------------------------------------------
 
 const CART_SYSTEM =
-  "You build a shopping cart from a FIXED catalog. Only use product IDs that " +
-  "appear in the provided catalog — never invent an ID or a product. Skip " +
-  "anything already in the recent-purchases list and give a short reason. " +
-  "Choose sensible quantities. Return JSON only.";
+  "You build a grocery cart from a FIXED catalog. Rules:\n" +
+  "- Use ONLY product_ids present in the provided catalog. Never invent an id, name, or product.\n" +
+  "- Map each thing the shopper asks for to the single CLOSEST catalog product " +
+  "(e.g. \"beer\" -> the catalog's beer; \"steak\" -> its beef cut). If nothing in the " +
+  "catalog is a reasonable match, do NOT add it — list it in `skipped` with a one-word reason like \"unavailable\".\n" +
+  "- Skip anything already in recent_purchases (match by name) and use the reason \"bought recently\".\n" +
+  "- Expand obvious intent: a themed request (\"taco night\", \"movie snacks\") should pull the catalog items that fit it.\n" +
+  "- Choose sensible integer quantities — usually 1, more only when the request implies it. Never exceed 12 of one item.\n" +
+  "- Never repeat a product_id; combine duplicates into one line with summed qty.\n" +
+  "Return JSON only.";
 
 export async function buildCart(
   text: string,
@@ -294,12 +302,12 @@ function validatePolicyParams(
       return { category: canon };
     }
     case "approval_threshold":
-      if (params.amount_cents == null || !Number.isInteger(params.amount_cents))
-        throw new Error("approval_threshold needs integer amount_cents");
+      if (params.amount_cents == null || !Number.isInteger(params.amount_cents) || params.amount_cents <= 0)
+        throw new Error("approval_threshold needs a positive integer amount_cents");
       return { amount_cents: params.amount_cents };
     case "split_weight":
-      if (params.weight == null || !Number.isInteger(params.weight))
-        throw new Error("split_weight needs integer weight");
+      if (params.weight == null || !Number.isInteger(params.weight) || params.weight < 1)
+        throw new Error("split_weight needs an integer weight >= 1");
       return { weight: params.weight };
   }
 }

@@ -26,6 +26,8 @@ export default function Settings() {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [reorderBusy, setReorderBusy] = useState<string | null>(null);
   const [carts, setCarts] = useState<{ id: string; name: string; decision: "always" | "ask" | "never" }[]>([]);
   const meName = users.find((u) => u.id === me)?.name ?? "you";
 
@@ -57,21 +59,31 @@ export default function Settings() {
   };
 
   const reorder = async (id: string) => {
-    const r = await fetch(`/api/recurring/${id}/run`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ userId: me }),
-    });
-    if (r.ok) window.location.href = "/cart";
+    setReorderBusy(id);
+    setErr("");
+    try {
+      const r = await fetch(`/api/recurring/${id}/run`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ userId: me }),
+      });
+      if (r.ok) { window.location.href = "/cart"; return; }
+      setErr("Couldn't reorder that cart.");
+    } catch { setErr("Couldn't reach the server."); } finally { setReorderBusy(null); }
   };
 
   const remove = async (id: string) => {
     if (!me) return;
-    await fetch(`/api/policy/${id}?user=${encodeURIComponent(me)}`, { method: "DELETE" });
-    await load();
+    setPolicies((ps) => ps.filter((p) => p.id !== id)); // optimistic
+    const r = await fetch(`/api/policy/${id}?user=${encodeURIComponent(me)}`, { method: "DELETE" }).catch(() => null);
+    if (!r || !r.ok) await load(); // restore on failure
   };
 
-  const add = async () => {
+  const startEdit = (p: Policy) => { setEditingId(p.id); setText(p.source_text); setErr(""); };
+  const cancelEdit = () => { setEditingId(null); setText(""); setErr(""); };
+
+  // Save a new rule, or replace the one being edited (compile new → drop old).
+  const save = async () => {
     const t = text.trim();
     if (!t || !me) return;
     setBusy(true);
@@ -82,8 +94,9 @@ export default function Settings() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ userId: me, text: t }),
       });
-      if (r.ok) { setText(""); await load(); }
-      else setErr((await r.json().catch(() => ({}))).error ?? "Couldn't save that rule.");
+      if (!r.ok) { setErr((await r.json().catch(() => ({}))).error ?? "Couldn't save that rule."); return; }
+      if (editingId) await fetch(`/api/policy/${editingId}?user=${encodeURIComponent(me)}`, { method: "DELETE" }).catch(() => {});
+      setText(""); setEditingId(null); await load();
     } catch { setErr("Couldn't reach the server."); } finally { setBusy(false); }
   };
 
@@ -91,8 +104,8 @@ export default function Settings() {
     <div className="mx-auto flex min-h-dvh w-full max-w-[440px] flex-col bg-bg">
       <header className="flex items-center justify-between px-5 pt-5 pb-3">
         <div className="flex items-center gap-3">
-          <Link href="/" className="press grid h-9 w-9 place-items-center rounded-full border border-line bg-surface text-ink-soft">
-            <Icon name="home" size={18} />
+          <Link href="/group" aria-label="Back to group" className="press grid h-9 w-9 place-items-center rounded-full border border-line bg-surface text-ink-soft">
+            <Icon name="back" size={18} />
           </Link>
           <h1 className="font-display text-lg font-bold tracking-tight text-ink">Rules for {meName}</h1>
         </div>
@@ -112,6 +125,9 @@ export default function Settings() {
                 <div className="text-[14px] font-semibold text-ink">{describe(p)}</div>
                 <div className="mt-0.5 text-[12px] font-medium text-ink-faint">&ldquo;{p.source_text}&rdquo;</div>
               </div>
+              <button onClick={() => startEdit(p)} className={`press mt-0.5 shrink-0 text-[12.5px] font-semibold ${editingId === p.id ? "text-accent" : "text-accent-ink"}`}>
+                Edit
+              </button>
               <button onClick={() => remove(p.id)} aria-label="Delete rule" className="press -mr-1 mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full text-ink-faint hover:text-warn">
                 <Icon name="x" size={16} />
               </button>
@@ -126,7 +142,7 @@ export default function Settings() {
             <div key={c.id} className="rounded-2xl border border-line bg-surface p-3.5">
               <div className="mb-2 flex items-center justify-between">
                 <span className="font-semibold text-ink">{c.name}</span>
-                <button onClick={() => reorder(c.id)} className="press text-[13px] font-semibold text-accent">Reorder</button>
+                <button onClick={() => reorder(c.id)} disabled={reorderBusy === c.id} className="press text-[13px] font-semibold text-accent disabled:opacity-50">{reorderBusy === c.id ? "Reordering…" : "Reorder"}</button>
               </div>
               <div className="flex gap-2">
                 {(["always", "ask", "never"] as const).map((opt) => (
@@ -146,7 +162,10 @@ export default function Settings() {
         </section>
 
         <section className="rounded-[20px] border border-line bg-surface p-4">
-          <label className="text-[12px] font-semibold uppercase tracking-[0.08em] text-accent-ink">New rule</label>
+          <div className="flex items-center justify-between">
+            <label className="text-[12px] font-semibold uppercase tracking-[0.08em] text-accent-ink">{editingId ? "Edit rule" : "New rule"}</label>
+            {editingId && <button onClick={cancelEdit} className="press text-[12px] font-semibold text-ink-faint">Cancel</button>}
+          </div>
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
@@ -155,12 +174,12 @@ export default function Settings() {
             className="mt-2 w-full resize-none rounded-xl border border-line bg-bg px-3 py-2.5 text-[14px] text-ink outline-none placeholder:text-ink-faint focus:border-accent"
           />
           <button
-            onClick={add}
+            onClick={save}
             disabled={busy || !text.trim()}
             className="press mt-2.5 flex w-full items-center justify-center gap-2 rounded-2xl bg-accent py-3.5 text-[15px] font-semibold text-on-accent disabled:opacity-45"
           >
-            <Icon name="plus" size={18} strokeWidth={2.4} />
-            {busy ? "Compiling…" : "Add rule"}
+            <Icon name={editingId ? "check" : "plus"} size={18} strokeWidth={2.4} />
+            {busy ? "Compiling…" : editingId ? "Update rule" : "Add rule"}
           </button>
           {err && <p className="mt-2 text-[12px] font-medium text-red-500">{err}</p>}
         </section>
