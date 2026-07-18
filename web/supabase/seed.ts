@@ -3,18 +3,25 @@
 // STRIPE_SECRET_KEY so P3 can seed + verify without it (placeholder PM rows).
 import { admin } from '../lib/supabase'
 import { computeSplit } from '../lib/split'
+import { canonicalKey } from '../lib/dedupe'
 import type { Member, Line } from '../lib/types'
 
 const db = admin()
 
 async function wipe() {
-  // FK order.
+  // FK order. offers is after purchase_items (purchase_items.offer_id -> offers)
+  // and before products (offers.product_id -> products).
   for (const t of [
     'charges',
     'item_splits',
     'approvals',
     'purchase_items',
+    'offers',
+    'restock_subscriptions',
+    'scrape_runs',
     'purchases',
+    'recurring_cart_approvals',
+    'recurring_carts',
     'policies',
     'payment_methods',
     'products',
@@ -89,11 +96,16 @@ async function main() {
     { name: 'Paper Towels', category: 'household', price_cents: 1800, unit: '6-pack' },
     { name: 'Dish Soap', category: 'cleaning', price_cents: 450, unit: 'bottle' },
     { name: 'Sparkling Water', category: 'snacks', price_cents: 800, unit: '12-pack' },
+    { name: 'Coffee', category: 'groceries', price_cents: 1549, unit: '28 oz' },
   ]
-  const { data: products } = await db.from('products').insert(catalog).select('id, name, category, price_cents')
+  const { data: products } = await db
+    .from('products')
+    .insert(catalog.map((c) => ({ ...c, canonical_key: canonicalKey(c.name, c.unit) })))
+    .select('id, name, category, price_cents')
   const prod = (name: string) => products!.find((p) => p.name === name)!
 
-  // Recurring cart so the reorder flow has something to run in the demo.
+  // Recurring cart so the reorder + standing-verdict flow has something to run
+  // in the demo (settings "Reorder", /api/recurring, the approval device).
   await db.from('recurring_carts').insert({
     name: 'Weekly groceries',
     owner_id: uid('Sam'),

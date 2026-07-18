@@ -20,6 +20,11 @@ type ChargeRow = {
   status: 'succeeded' | 'failed'
   stripe_payment_intent_id: string | null
 }
+type ExistingChargeRow = {
+  id: string
+  user_id: string
+  amount_cents: number
+}
 
 type SplitRow = {
   user_id: string
@@ -93,26 +98,10 @@ export async function POST(_request: Request, context: RouteContext) {
     return NextResponse.json({ error: paymentMethodError.message }, { status: 500 })
   }
 
-  // Users already charged successfully for this purchase (e.g. a prior partial
-  // checkout, then a re-split). Never charge them again — reuse the ledger row.
-  const { data: priorCharges } = await supabase
-    .from('charges')
-    .select('user_id,amount_cents,status,stripe_payment_intent_id')
-    .eq('purchase_id', purchaseId)
-    .eq('status', 'succeeded')
-    .returns<ChargeRow[]>()
-  const succeededByUser = new Map((priorCharges ?? []).map((c) => [c.user_id, c]))
-
   const paymentMethodByUser = new Map((paymentMethods ?? []).map((method) => [method.user_id, method]))
   const charges: CheckoutCharge[] = []
 
   for (const total of totals) {
-    const prior = succeededByUser.get(total.userId)
-    if (prior) {
-      charges.push({ userId: total.userId, amountCents: prior.amount_cents, status: 'succeeded', stripePaymentIntentId: prior.stripe_payment_intent_id })
-      continue
-    }
-
     const paymentMethod = paymentMethodByUser.get(total.userId)
     if (!paymentMethod) {
       charges.push({ userId: total.userId, amountCents: total.amountCents, status: 'failed', stripePaymentIntentId: null })
@@ -139,19 +128,67 @@ export async function POST(_request: Request, context: RouteContext) {
     })
   }
 
-  const { error: insertError } = await supabase.from('charges').upsert(
-    charges.map((charge) => ({
-      purchase_id: purchaseId,
-      user_id: charge.userId,
-      amount_cents: charge.amountCents,
-      stripe_payment_intent_id: charge.stripePaymentIntentId,
-      status: charge.status,
-    })),
-    { onConflict: 'purchase_id,user_id,amount_cents' },
-  )
+  const chargeRows = charges.map((charge) => ({
+    purchase_id: purchaseId,
+    user_id: charge.userId,
+    amount_cents: charge.amountCents,
+    stripe_payment_intent_id: charge.stripePaymentIntentId,
+    status: charge.status,
+  }))
 
-  if (insertError) {
-    return NextResponse.json({ error: insertError.message }, { status: 500 })
+  // The remote `charges` table has no unique constraint on
+  // (purchase_id, user_id, amount_cents), so PostgREST upsert with onConflict
+  // fails with HTTP 500. Load existing rows for this purchase, key them by
+  // user+amount, update matched rows by primary key, and batch-insert the rest.
+  const { data: existingChargeRows, error: chargeSelectError } = await supabase
+    .from('charges')
+    .select('id,user_id,amount_cents')
+    .eq('purchase_id', purchaseId)
+    .order('created_at', { ascending: true })
+    .returns<ExistingChargeRow[]>()
+
+  if (chargeSelectError) {
+    return NextResponse.json({ error: chargeSelectError.message }, { status: 500 })
+  }
+
+  const existingChargeIdByKey = new Map<string, string>()
+  for (const row of existingChargeRows ?? []) {
+    const key = `${row.user_id}:${row.amount_cents}`
+    if (!existingChargeIdByKey.has(key)) {
+      existingChargeIdByKey.set(key, row.id)
+    }
+  }
+
+  const updates: Array<{ id: string; charge: (typeof chargeRows)[number] }> = []
+  const inserts: Array<(typeof chargeRows)[number]> = []
+  for (const charge of chargeRows) {
+    const existingId = existingChargeIdByKey.get(`${charge.user_id}:${charge.amount_cents}`)
+    if (existingId) {
+      updates.push({ id: existingId, charge })
+    } else {
+      inserts.push(charge)
+    }
+  }
+
+  for (const { id, charge } of updates) {
+    const { error: updateError } = await supabase
+      .from('charges')
+      .update({
+        stripe_payment_intent_id: charge.stripe_payment_intent_id,
+        status: charge.status,
+      })
+      .eq('id', id)
+
+    if (updateError) {
+      return NextResponse.json({ error: updateError.message }, { status: 500 })
+    }
+  }
+
+  if (inserts.length > 0) {
+    const { error: insertError } = await supabase.from('charges').insert(inserts)
+    if (insertError) {
+      return NextResponse.json({ error: insertError.message }, { status: 500 })
+    }
   }
 
   if (charges.every((charge) => charge.status === 'succeeded')) {
