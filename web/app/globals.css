@@ -1,0 +1,130 @@
+@import "tailwindcss";
+
+/* Map Cartel design tokens → Tailwind color utilities (bg-surface, text-ink, border-line, …) */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-ink-faint: var(--ink-faint);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-on-accent: var(--on-accent);
+  --color-positive: var(--positive);
+  --color-positive-soft: var(--positive-soft);
+  --color-warn: var(--warn);
+  --color-groceries: var(--cat-groceries);
+  --color-meat: var(--cat-meat);
+  --color-alcohol: var(--cat-alcohol);
+  --color-household: var(--cat-household);
+  --color-snacks: var(--cat-snacks);
+  --color-cleaning: var(--cat-cleaning);
+
+  --font-display: var(--font-space-grotesk);
+  --font-sans: var(--font-inter);
+}
+
+/* Light (default) — exported from the Figma "Cartel" collection, Light mode */
+:root {
+  --bg: #f6f4ef;
+  --surface: #ffffff;
+  --surface-2: #f0ede6;
+  --ink: #1a1815;
+  --ink-soft: #6b655c;
+  --ink-faint: #9e988d;
+  --line: #e9e5dc;
+  --accent: #6d5ae6;
+  --accent-ink: #4a38c7;
+  --accent-soft: #ece9fc;
+  --on-accent: #ffffff;
+  --positive: #1f9e62;
+  --positive-soft: #def2e7;
+  --warn: #e5673b;
+  --cat-groceries: #35a87a;
+  --cat-meat: #e4614f;
+  --cat-alcohol: #9b5ce0;
+  --cat-household: #5385e8;
+  --cat-snacks: #e2952b;
+  --cat-cleaning: #2bb6c9;
+}
+
+/* Dark — Figma "Cartel" collection, Dark mode. */
+:root[data-theme="dark"] {
+  --bg: #121114;
+  --surface: #1c1a21;
+  --surface-2: #26232c;
+  --ink: #f4f2ec;
+  --ink-soft: #a8a29a;
+  --ink-faint: #6e6960;
+  --line: #2c2932;
+  --accent: #8f7dff;
+  --accent-ink: #b9acff;
+  --accent-soft: #272141;
+  --on-accent: #1a1524;
+  --positive: #4fd397;
+  --positive-soft: #16281e;
+  --warn: #ff8560;
+  --cat-groceries: #4fcb99;
+  --cat-meat: #ff7e6b;
+  --cat-alcohol: #b98bff;
+  --cat-household: #7ba6ff;
+  --cat-snacks: #f2b25a;
+  --cat-cleaning: #4fd3e4;
+}
+/* System dark when the user hasn't explicitly chosen light */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121114;
+    --surface: #1c1a21;
+    --surface-2: #26232c;
+    --ink: #f4f2ec;
+    --ink-soft: #a8a29a;
+    --ink-faint: #6e6960;
+    --line: #2c2932;
+    --accent: #8f7dff;
+    --accent-ink: #b9acff;
+    --accent-soft: #272141;
+    --on-accent: #1a1524;
+    --positive: #4fd397;
+    --positive-soft: #16281e;
+    --warn: #ff8560;
+    --cat-groceries: #4fcb99;
+    --cat-meat: #ff7e6b;
+    --cat-alcohol: #b98bff;
+    --cat-household: #7ba6ff;
+    --cat-snacks: #f2b25a;
+    --cat-cleaning: #4fd3e4;
+  }
+}
+
+html { -webkit-text-size-adjust: 100%; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-feature-settings: "tnum" 1;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior-y: none;
+}
+
+/* ---- Motion. All gated by prefers-reduced-motion. ---- */
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes growX { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes pop { 0% { transform: scale(0); } 60% { transform: scale(1.14); } 100% { transform: scale(1); } }
+@keyframes sheetUp { from { opacity: 0; transform: translateY(26px); } to { opacity: 1; transform: none; } }
+
+.a-rise { animation: rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.a-grow { transform-origin: left center; animation: growX 0.85s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.a-pop { animation: pop 0.42s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.a-sheet { animation: sheetUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+.press { transition: transform 0.12s ease; }
+.press:active { transform: scale(0.97); }
+
+@media (prefers-reduced-motion: reduce) {
+  .a-rise, .a-grow, .a-pop, .a-sheet { animation: none !important; }
+  .press:active { transform: none; }
+}

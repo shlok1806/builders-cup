@@ -1,0 +1,35 @@
+{
+  "name": "web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "dev:mobile": "next dev -H 0.0.0.0",
+    "build": "next build",
+    "start": "next start",
+    "start:mobile": "next start -H 0.0.0.0",
+    "lint": "eslint",
+    "test": "vitest run",
+    "seed": "tsx --env-file=.env.local supabase/seed.ts"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2",
+    "next": "16.2.10",
+    "openai": "^4",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "stripe": "^17"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.10",
+    "tailwindcss": "^4",
+    "tsx": "^4",
+    "typescript": "^5",
+    "vitest": "^3"
+  }
+}
