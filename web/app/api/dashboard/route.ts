@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { admin } from '@/lib/supabase'
+import { savingsVsSecond } from '@/lib/deals'
 
 // P3.4 — F7. This-month spend aggregated by category + by user, vs budget.
 // Filter on purchases.created_at (the order date) — NOT item_splits.created_at,
@@ -59,5 +60,34 @@ export async function GET() {
     })),
     budgetCents: household.monthly_budget_cents,
     overBudget: thisMonthCents > household.monthly_budget_cents,
+    agentSavedThisMonthCents: await agentSavedThisMonth(db, household.id, monthStart),
   })
+}
+
+// Ramp's headline metric: running total the agent saved this month by taking the
+// cheapest offer over the runner-up on each line it sourced.
+async function agentSavedThisMonth(
+  db: ReturnType<typeof admin>,
+  householdId: string,
+  monthStart: string
+): Promise<number> {
+  const { data } = await db
+    .from('purchase_items')
+    .select('product_id, qty, purchases!inner(household_id, created_at)')
+    .eq('purchases.household_id', householdId)
+    .gte('purchases.created_at', monthStart)
+    .not('product_id', 'is', null)
+
+  const lines = (data ?? []) as unknown as { product_id: string; qty: number }[]
+  const perUnit = new Map<string, number>()
+  let saved = 0
+  for (const l of lines) {
+    let s = perUnit.get(l.product_id)
+    if (s === undefined) {
+      s = await savingsVsSecond(l.product_id)
+      perUnit.set(l.product_id, s)
+    }
+    saved += s * l.qty
+  }
+  return saved
 }
