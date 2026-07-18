@@ -96,7 +96,6 @@ function Device() {
     <div className="mx-auto flex min-h-dvh w-full max-w-[440px] flex-col bg-bg">
       <div className="flex items-center justify-between px-6 pt-4 pb-1 text-ink">
         <Clock className="text-sm font-semibold tabular-nums" />
-        <span className="text-xs font-semibold">●●● ▮</span>
       </div>
       {latest?.recurringCartId && (
         <div className="px-6 pb-1 text-[13px] font-medium text-ink-soft">
