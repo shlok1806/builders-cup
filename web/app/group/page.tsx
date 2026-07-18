@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Avatar, CheckBadge, Clock, CountUp, Icon, ThemeToggle } from "@/components/ui";
+import { Avatar, CartTab, CheckBadge, Clock, CountUp, Icon, ThemeToggle } from "@/components/ui";
 import UserSwitcher from "@/components/UserSwitcher";
 import { useMe } from "@/lib/useMe";
 import { categories, household, money, people } from "@/lib/data";
@@ -211,7 +211,7 @@ export default function GroupDashboard() {
         <section className="a-rise space-y-2.5" style={{ animationDelay: "120ms" }}>
           <div className="flex items-center justify-between px-1">
             <h2 className="font-display text-base font-bold tracking-tight text-ink">Each person&apos;s share</h2>
-            <Link href="/history" className="press text-[13px] font-semibold text-accent-ink">See all ›</Link>
+            <Link href="/cards" className="press text-[13px] font-semibold text-accent-ink">Cards ›</Link>
           </div>
           <div className="rounded-[22px] border border-line bg-surface px-4">
             {persons.map((p, i) => (
@@ -231,7 +231,7 @@ export default function GroupDashboard() {
         <section className="a-rise rounded-[22px] border border-line bg-surface px-5 py-[18px]" style={{ animationDelay: "200ms" }}>
           <div className="flex items-center justify-between">
             <h2 className="font-display text-base font-bold tracking-tight text-ink">Where it went</h2>
-            <span className="text-[12.5px] font-medium text-ink-faint">{cats.length} categories</span>
+            <Link href="/analytics" className="press text-[13px] font-semibold text-accent-ink">Details ›</Link>
           </div>
           <div className="mt-4 flex h-4 gap-[3px]">
             {cats.map((c, i) => (
@@ -257,10 +257,7 @@ export default function GroupDashboard() {
             <Icon name="home" size={24} />
             <span className="text-[11px] font-semibold">Groups</span>
           </Link>
-          <Link href="/cart" className="flex flex-col items-center gap-1.5 text-ink-faint">
-            <Icon name="cart" size={24} />
-            <span className="text-[11px] font-semibold">Cart</span>
-          </Link>
+          <CartTab />
           <Link href="/cart" className="press -mt-1 grid h-[54px] w-[54px] place-items-center rounded-full bg-accent text-on-accent shadow-[0_6px_16px_-2px_rgba(109,90,230,0.5)]">
             <Icon name="plus" size={24} strokeWidth={2.4} />
           </Link>

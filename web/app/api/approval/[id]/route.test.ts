@@ -77,7 +77,7 @@ describe('POST /api/approval/[id]', () => {
     harness.checkoutPurchase.mockReset()
   })
 
-  it('records a non-final approval but does not charge before every approver responds', async () => {
+  it('records a non-final approval but does not complete before every approver responds', async () => {
     scriptDb(
       { table: 'approvals', query: approvalQuery({ data: { id: 'approval-3', purchase_id: 'purchase-7', purchase_item_id: 'item-2' } }) },
       { table: 'approvals', query: updateQuery() },
@@ -91,24 +91,18 @@ describe('POST /api/approval/[id]', () => {
     expect(harness.checkoutPurchase).not.toHaveBeenCalled()
   })
 
-  it('starts checkout only after the final approval, returning the actual charge results', async () => {
+  it('records the purchase only after the final approval', async () => {
     const db = scriptDb(
       { table: 'approvals', query: approvalQuery({ data: { id: 'approval-3', purchase_id: 'purchase-7', purchase_item_id: 'item-2' } }) },
       { table: 'approvals', query: updateQuery() },
       { table: 'approvals', query: countQuery({ count: 0, error: null }) },
     )
-    harness.checkoutPurchase.mockResolvedValue({
-      status: 200,
-      body: { charges: [{ userId: 'sam', amountCents: 1505, status: 'succeeded', stripePaymentIntentId: 'pi_sam' }] },
-    })
+    harness.checkoutPurchase.mockResolvedValue({ status: 200, body: { completed: true } })
 
     const response = await approve()
 
     expect(response.status).toBe(200)
-    await expect(response.json()).resolves.toEqual({
-      ok: true,
-      charges: [{ userId: 'sam', amountCents: 1505, status: 'succeeded', stripePaymentIntentId: 'pi_sam' }],
-    })
+    await expect(response.json()).resolves.toEqual({ ok: true, completed: true })
     expect(harness.checkoutPurchase).toHaveBeenCalledWith('purchase-7', db)
   })
 })
