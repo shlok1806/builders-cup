@@ -2,6 +2,7 @@ import { admin } from './supabase'
 import { getOffers } from './scrape'
 import { getHouseholdAllowlist } from './allowlist-store'
 import { composeCart, type ComposeCandidate, type Skipped } from './openai'
+import { deriveItemSignals } from './learn'
 import type { OfferRow } from './types'
 
 // The shared cart composer both procurement paths run through:
@@ -85,6 +86,10 @@ export async function planCart(opts: {
   const dueNames = opts.dueNames ?? new Set<string>()
   const recentSet = new Set((opts.recentNames ?? []).map((n) => n.toLowerCase()))
 
+  // What we've learned from this household's own purchase history — injected per candidate
+  // so the composer trusts proven staples and stays conservative on unknowns.
+  const signals = await deriveItemSignals(opts.householdId, db)
+
   // Dedupe seeds by name — the request and the due list often overlap.
   const seenSeed = new Set<string>()
   const seeds = opts.seeds.filter((s) => {
@@ -117,15 +122,24 @@ export async function planCart(opts: {
   // Only seeds we actually found an offer for are candidates the composer can pick.
   const candidates: ComposeCandidate[] = sourced
     .filter((s) => s.best)
-    .map((s) => ({
-      name: s.seed.name,
-      category: s.seed.category,
-      unitPriceCents: s.best!.price_cents,
-      savingsCents: s.savingsCents,
-      offersCount: s.offersCount,
-      dueSoon: dueNames.has(s.seed.name.toLowerCase()),
-      boughtRecently: recentSet.has(s.seed.name.toLowerCase()),
-    }))
+    .map((s) => {
+      const sig = signals.get(s.seed.name.toLowerCase())
+      return {
+        name: s.seed.name,
+        category: s.seed.category,
+        unitPriceCents: s.best!.price_cents,
+        savingsCents: s.savingsCents,
+        offersCount: s.offersCount,
+        dueSoon: dueNames.has(s.seed.name.toLowerCase()),
+        boughtRecently: recentSet.has(s.seed.name.toLowerCase()),
+        ...(sig && {
+          purchaseCount: sig.purchaseCount,
+          typicalQty: sig.typicalQty,
+          cadenceDays: sig.cadenceDays,
+          confidence: sig.confidence,
+        }),
+      }
+    })
 
   const decision = await composeCart({ request: opts.request, budgetRemainingCents, candidates })
 
