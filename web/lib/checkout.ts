@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 import { aggregateSplitsByUser, type CheckoutCharge } from '@/lib/payments'
+import { recordPurchaseLearnings } from '@/lib/learn'
 import { admin } from '@/lib/supabase'
 import { chargeUser, type ChargeUserResult } from '@/lib/stripe'
 
@@ -11,6 +12,7 @@ export type CheckoutResult =
 type PurchaseRow = {
   id: string
   status: string
+  household_id: string
 }
 
 type ChargeRow = {
@@ -43,7 +45,7 @@ type PaymentMethodRow = {
 export async function checkoutPurchase(purchaseId: string, supabase = admin()): Promise<CheckoutResult> {
   const { data: purchase, error: purchaseError } = await supabase
     .from('purchases')
-    .select('id,status')
+    .select('id,status,household_id')
     .eq('id', purchaseId)
     .single<PurchaseRow>()
 
@@ -202,6 +204,14 @@ export async function checkoutPurchase(purchaseId: string, supabase = admin()): 
 
     if (updateError) {
       return { status: 500, body: { error: updateError.message } }
+    }
+
+    // Feed the learning loop now that the purchase is real. Best-effort: a learning
+    // failure must never fail or roll back a completed charge.
+    try {
+      await recordPurchaseLearnings(purchase.household_id, purchaseId, supabase)
+    } catch (error) {
+      console.error(`[learn] write-back failed for purchase ${purchaseId}:`, error)
     }
   }
 
