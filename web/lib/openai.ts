@@ -75,7 +75,7 @@ const CART_FALLBACKS: Record<string, CartResult> = {
       { name: 'dish soap', category: 'cleaning', qty: 1 },
       { name: 'tequila', category: 'alcohol', qty: 1 },
     ],
-    skipped: [{ name: 'paper towels', reason: 'bought recently' }],
+    skipped: [],
   },
 }
 
@@ -279,6 +279,18 @@ export const POLICY_TYPES = ['exclude_category', 'approval_threshold', 'split_we
 export type PolicyType = (typeof POLICY_TYPES)[number]
 export type CompilePolicyResult = { type: PolicyType; params: Record<string, unknown> }
 
+// compilePolicy returns EITHER a compiled policy OR an explicit refusal. It must
+// never force-fit an out-of-scope rule into one of the three types — that silently
+// mangles the split. The route turns { ok:false } into a 422 the settings UI shows.
+export type PolicyOutcome =
+  | { ok: true; type: PolicyType; params: Record<string, unknown> }
+  | { ok: false; reason: string }
+
+export const UNSUPPORTED_HINT =
+  'I can only make three kinds of rules right now: skip a category ("no alcohol for me"), ' +
+  'ask-before over an amount ("ask me before anything over $40"), or a bigger/smaller share ' +
+  '("give me a double share"). Try rephrasing to one of those.'
+
 // The fixed catalog categories a policy may exclude (matches the seeded catalog).
 const CATALOG_CATEGORIES = ['groceries', 'meat', 'alcohol', 'household', 'snacks', 'cleaning']
 
@@ -323,19 +335,32 @@ export function heuristicPolicy(sentence: string): CompilePolicyResult | null {
   return null
 }
 
-const POLICY_SYSTEM = `You compile ONE household spending rule into ONE JSON policy object.
-Choose exactly one type from: ${POLICY_TYPES.join(', ')}.
-Fill only the params relevant to that type; leave the others null:
-- exclude_category -> { category } (MUST be one of: ${CATALOG_CATEGORIES.join(', ')} — pick the closest)
-- approval_threshold -> { amount_cents } (integer cents)
-- split_weight -> { weight } (integer)`
+const POLICY_SYSTEM = `You compile ONE household spending rule into ONE JSON policy object, or decline.
+Pick exactly one "type":
+- exclude_category -> { category } — a housemate opts out of paying for a category.
+  category MUST be one of: ${CATALOG_CATEGORIES.join(', ')} (pick the closest: wine/beer->alcohol, beef/steak->meat).
+- approval_threshold -> { amount_cents } — ask this person before ANY single item over a dollar amount (integer cents).
+- split_weight -> { weight } — this person pays a bigger/smaller share. Integer: "double"->2, "3x the share"->3.
+- unsupported -> {} — use for ANYTHING that isn't exactly one of the three above. Prefer this over a wrong guess.
+
+Fill only the params relevant to that type; leave the others null.
+Return "unsupported" (never a forced guess) for rules about: time or schedules ("only on weekends"),
+a monthly/total budget or cap ("cap my spend at $200/month" is NOT a per-item threshold), per-store or
+per-person limits, "split everything evenly" (that is already the default, not a rule), or anything ambiguous.
+When unsupported, put a short human reason in "reason".
+Examples:
+- "give me a 3x share" -> split_weight, weight 3
+- "no wine for me" -> exclude_category, alcohol
+- "ask me before anything over $40" -> approval_threshold, 4000
+- "cap my monthly spending at $200" -> unsupported
+- "split everything evenly" -> unsupported`
 
 const POLICY_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['type', 'params'],
+  required: ['type', 'params', 'reason'],
   properties: {
-    type: { type: 'string', enum: POLICY_TYPES as unknown as string[] },
+    type: { type: 'string', enum: [...POLICY_TYPES, 'unsupported'] },
     params: {
       type: 'object',
       additionalProperties: false,
@@ -346,6 +371,7 @@ const POLICY_SCHEMA = {
         weight: { type: ['integer', 'null'] },
       },
     },
+    reason: { type: ['string', 'null'] },
   },
 } as const
 
@@ -385,34 +411,46 @@ const POLICY_FALLBACKS: Record<string, CompilePolicyResult> = {
   'I earn more so give me a double share': { type: 'split_weight', params: { weight: 2 } },
 }
 
-export async function compilePolicy(sentence: string): Promise<CompilePolicyResult> {
+// The LLM classifier. Returns a compiled policy, or null when the model declines
+// (type 'unsupported'). Throws when the API is unavailable/misbehaves so the
+// caller can fall back to the deterministic net. Never force-fits a guess.
+async function llmCompilePolicy(sentence: string): Promise<CompilePolicyResult | null> {
+  if (!process.env.OPENAI_API_KEY) throw new Error('no OPENAI_API_KEY')
+  const res = await client().chat.completions.create({
+    model: 'gpt-4o-mini',
+    messages: [
+      { role: 'system', content: POLICY_SYSTEM },
+      { role: 'user', content: sentence },
+    ],
+    response_format: {
+      type: 'json_schema',
+      json_schema: { name: 'policy', strict: true, schema: POLICY_SCHEMA },
+    },
+  })
+  logUsage('compilePolicy', 'gpt-4o-mini', res.usage)
+  const content = res.choices[0]?.message?.content
+  if (!content) throw new Error('empty completion')
+  const parsed = JSON.parse(content) as {
+    type: PolicyType | 'unsupported'
+    params: { category: string | null; amount_cents: number | null; weight: number | null }
+  }
+  if (parsed.type === 'unsupported') return null
+  if (!(POLICY_TYPES as readonly string[]).includes(parsed.type)) throw new Error(`bad type: ${parsed.type}`)
+  return { type: parsed.type, params: validatePolicyParams(parsed.type, parsed.params) }
+}
+
+// LLM-primary: the model classifies (best coverage for novel phrasings) and may
+// decline via 'unsupported' -> we refuse rather than mangle. Only when the API is
+// unavailable do we fall back to the exact-match table + keyword heuristic so the
+// demo still works offline. A refusal never falls through to a heuristic guess.
+export async function compilePolicy(sentence: string): Promise<PolicyOutcome> {
   try {
-    if (!process.env.OPENAI_API_KEY) throw new Error('no OPENAI_API_KEY')
-    const res = await client().chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: POLICY_SYSTEM },
-        { role: 'user', content: sentence },
-      ],
-      response_format: {
-        type: 'json_schema',
-        json_schema: { name: 'policy', strict: true, schema: POLICY_SCHEMA },
-      },
-    })
-    logUsage('compilePolicy', 'gpt-4o-mini', res.usage)
-    const content = res.choices[0]?.message?.content
-    if (!content) throw new Error('empty completion')
-    const parsed = JSON.parse(content) as {
-      type: PolicyType
-      params: { category: string | null; amount_cents: number | null; weight: number | null }
-    }
-    if (!(POLICY_TYPES as readonly string[]).includes(parsed.type)) throw new Error(`bad type: ${parsed.type}`)
-    return { type: parsed.type, params: validatePolicyParams(parsed.type, parsed.params) }
+    const llm = await llmCompilePolicy(sentence)
+    return llm ? { ok: true, ...llm } : { ok: false, reason: UNSUPPORTED_HINT }
   } catch (e) {
     logFallback('compilePolicy', (e as Error).message)
     const fallback = POLICY_FALLBACKS[sentence] ?? heuristicPolicy(sentence)
-    if (fallback) return fallback
-    throw new Error(`compilePolicy failed and no fallback for: ${JSON.stringify(sentence)}`)
+    return fallback ? { ok: true, ...fallback } : { ok: false, reason: UNSUPPORTED_HINT }
   }
 }
 
