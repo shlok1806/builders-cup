@@ -15,6 +15,7 @@ const num = (v: unknown) => Number(v);
 const describe = (p: Policy): string => {
   switch (p.type) {
     case "exclude_category": return `Excludes ${p.params.category}`;
+    case "exclude_item": return `Excludes ${p.params.item}`;
     case "approval_threshold": return `Approval required over $${(num(p.params.amount_cents) / 100).toFixed(0)}`;
     case "split_weight": return `${num(p.params.weight)}× share`;
     default: return p.source_text;

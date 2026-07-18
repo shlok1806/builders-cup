@@ -275,7 +275,7 @@ export async function composeCart(ctx: ComposeContext): Promise<ComposeDecision>
 // A cached-fallback + deterministic keyword compiler keeps it working with the
 // API (or the key) unavailable, mirroring the cart builder.
 
-export const POLICY_TYPES = ['exclude_category', 'approval_threshold', 'split_weight'] as const
+export const POLICY_TYPES = ['exclude_category', 'exclude_item', 'approval_threshold', 'split_weight'] as const
 export type PolicyType = (typeof POLICY_TYPES)[number]
 export type CompilePolicyResult = { type: PolicyType; params: Record<string, unknown> }
 
@@ -287,9 +287,9 @@ export type PolicyOutcome =
   | { ok: false; reason: string }
 
 export const UNSUPPORTED_HINT =
-  'I can only make three kinds of rules right now: skip a category ("no alcohol for me"), ' +
-  'ask-before over an amount ("ask me before anything over $40"), or a bigger/smaller share ' +
-  '("give me a double share"). Try rephrasing to one of those.'
+  'I can make rules to: skip a category ("no alcohol for me"), skip a specific item ' +
+  '("no bread for me"), ask-before over an amount ("ask me before anything over $40"), or give ' +
+  'you a bigger share ("give me a double share"). Try rephrasing to one of those.'
 
 // The fixed catalog categories a policy may exclude (matches the seeded catalog).
 const CATALOG_CATEGORIES = ['groceries', 'meat', 'alcohol', 'household', 'snacks', 'cleaning']
@@ -328,8 +328,19 @@ export function heuristicPolicy(sentence: string): CompilePolicyResult | null {
   const cat = CATEGORY_WORDS.find(([re]) => re.test(s))?.[1]
   // Intent words must signal EXCLUSION. Bare "split"/"charge" are inclusive
   // ("charge me for alcohol") — only their negated forms below count.
-  if (cat && /(don'?t|do not|never|no\b|not\b|exclude|skip|without|leave me out|don'?t (?:split|charge)|no (?:split|charge))/.test(s)) {
+  const excludeIntent = /(don'?t|do not|never|no\b|not\b|exclude|skip|without|leave me out|don'?t (?:split|charge)|no (?:split|charge))/
+  if (cat && excludeIntent.test(s)) {
     return { type: 'exclude_category', params: { category: cat } }
+  }
+
+  // exclude_item: same exclusion intent but naming a SPECIFIC product (no category
+  // matched above). Pull the noun phrase after the intent word ("no bread for me").
+  if (excludeIntent.test(s)) {
+    const m =
+      s.match(/(?:no|skip|without|exclude)\s+([a-z][a-z' ]*?)\s*(?:for me|to me|please|$)/) ||
+      s.match(/don'?t (?:charge|split|bill)(?: me)?(?: for)?\s+([a-z][a-z' ]+)/)
+    const item = m?.[1]?.trim()
+    if (item && item.length >= 2) return { type: 'exclude_item', params: { item } }
   }
 
   return null
@@ -337,11 +348,15 @@ export function heuristicPolicy(sentence: string): CompilePolicyResult | null {
 
 const POLICY_SYSTEM = `You compile ONE household spending rule into ONE JSON policy object, or decline.
 Pick exactly one "type":
-- exclude_category -> { category } — a housemate opts out of paying for a category.
+- exclude_category -> { category } — opts out of paying for a WHOLE category.
   category MUST be one of: ${CATALOG_CATEGORIES.join(', ')} (pick the closest: wine/beer->alcohol, beef/steak->meat).
+- exclude_item -> { item } — opts out of paying for ONE specific product, not a whole category.
+  Use this when they name a specific food/product ("no bread for me", "don't charge me for oat milk").
+  item = a short lowercase keyword that appears in the product name ("bread", "oat milk", "kombucha").
+  If the thing named is a whole category (alcohol, meat, snacks, cleaning, household, groceries), use exclude_category instead.
 - approval_threshold -> { amount_cents } — ask this person before ANY single item over a dollar amount (integer cents).
-- split_weight -> { weight } — this person pays a bigger/smaller share. Integer: "double"->2, "3x the share"->3.
-- unsupported -> {} — use for ANYTHING that isn't exactly one of the three above. Prefer this over a wrong guess.
+- split_weight -> { weight } — this person pays a bigger share. Integer >= 1: "double"->2, "3x the share"->3.
+- unsupported -> {} — use for ANYTHING that isn't exactly one of the above. Prefer this over a wrong guess.
 
 Fill only the params relevant to that type; leave the others null.
 Return "unsupported" (never a forced guess) for rules about: time or schedules ("only on weekends"),
@@ -351,6 +366,8 @@ When unsupported, put a short human reason in "reason".
 Examples:
 - "give me a 3x share" -> split_weight, weight 3
 - "no wine for me" -> exclude_category, alcohol
+- "no bread for me" -> exclude_item, item "bread"
+- "don't charge me for oat milk" -> exclude_item, item "oat milk"
 - "ask me before anything over $40" -> approval_threshold, 4000
 - "cap my monthly spending at $200" -> unsupported
 - "split everything evenly" -> unsupported`
@@ -364,9 +381,10 @@ const POLICY_SCHEMA = {
     params: {
       type: 'object',
       additionalProperties: false,
-      required: ['category', 'amount_cents', 'weight'],
+      required: ['category', 'item', 'amount_cents', 'weight'],
       properties: {
         category: { type: ['string', 'null'] },
+        item: { type: ['string', 'null'] },
         amount_cents: { type: ['integer', 'null'] },
         weight: { type: ['integer', 'null'] },
       },
@@ -380,7 +398,7 @@ const POLICY_SCHEMA = {
 // catalog category so the exclusion actually fires at split time.
 function validatePolicyParams(
   type: PolicyType,
-  params: { category: string | null; amount_cents: number | null; weight: number | null },
+  params: { category: string | null; item: string | null; amount_cents: number | null; weight: number | null },
 ): Record<string, unknown> {
   switch (type) {
     case 'exclude_category': {
@@ -389,6 +407,11 @@ function validatePolicyParams(
       const canon = CATALOG_CATEGORIES.includes(raw) ? raw : CATEGORY_WORDS.find(([re]) => re.test(raw))?.[1]
       if (!canon) throw new Error(`unknown category: ${raw}`)
       return { category: canon }
+    }
+    case 'exclude_item': {
+      const item = params.item?.trim().toLowerCase()
+      if (!item) throw new Error('exclude_item needs an item keyword')
+      return { item }
     }
     case 'approval_threshold':
       if (params.amount_cents == null || !Number.isInteger(params.amount_cents) || params.amount_cents <= 0)
@@ -432,7 +455,7 @@ async function llmCompilePolicy(sentence: string): Promise<CompilePolicyResult |
   if (!content) throw new Error('empty completion')
   const parsed = JSON.parse(content) as {
     type: PolicyType | 'unsupported'
-    params: { category: string | null; amount_cents: number | null; weight: number | null }
+    params: { category: string | null; item: string | null; amount_cents: number | null; weight: number | null }
   }
   if (parsed.type === 'unsupported') return null
   if (!(POLICY_TYPES as readonly string[]).includes(parsed.type)) throw new Error(`bad type: ${parsed.type}`)

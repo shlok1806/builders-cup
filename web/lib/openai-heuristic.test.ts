@@ -16,6 +16,13 @@ it('parses a split weight', () => {
   expect(heuristicPolicy('give me a 3x share')).toEqual({ type: 'split_weight', params: { weight: 3 } })
 })
 
+it('excludes a specific item when the noun is not a category', () => {
+  expect(heuristicPolicy('no bread for me')).toEqual({ type: 'exclude_item', params: { item: 'bread' } })
+  expect(heuristicPolicy("don't charge me for oat milk")).toEqual({ type: 'exclude_item', params: { item: 'oat milk' } })
+  // A category word still compiles to exclude_category, not exclude_item.
+  expect(heuristicPolicy('no alcohol for me')).toEqual({ type: 'exclude_category', params: { category: 'alcohol' } })
+})
+
 it('returns null when nothing matches', () => {
   expect(heuristicPolicy('hello there friend')).toBeNull()
 })

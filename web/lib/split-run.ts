@@ -54,6 +54,9 @@ export async function runSplit(purchaseId: string): Promise<SplitLineView[]> {
         excludedCategories: mine
           .filter((p) => p.type === 'exclude_category')
           .map((p) => (p.params as { category: string }).category),
+        excludedItems: mine
+          .filter((p) => p.type === 'exclude_item')
+          .map((p) => (p.params as { item: string }).item.toLowerCase()),
         approvalThresholdCents:
           (threshP?.params as { amount_cents?: number })?.amount_cents ?? null,
       }
@@ -62,6 +65,7 @@ export async function runSplit(purchaseId: string): Promise<SplitLineView[]> {
 
   const lines: Line[] = itemRows.map((it) => ({
     itemId: it.id,
+    name: it.name,
     category: it.category,
     lineTotalCents: it.unit_price_cents * it.qty, // always multiply — never unit price alone
   }))
