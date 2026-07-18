@@ -156,7 +156,9 @@ export function heuristicPolicy(sentence: string): CompilePolicyResult | null {
 
   // exclude_category: a category word + an exclusion intent.
   const cat = CATEGORY_WORDS.find(([re]) => re.test(s))?.[1]
-  if (cat && /(don'?t|do not|never|no\b|not\b|exclude|skip|without|split|charge|leave me out)/.test(s)) {
+  // Intent words must signal EXCLUSION. Bare "split"/"charge" are inclusive
+  // ("charge me for alcohol") — only their negated forms below count.
+  if (cat && /(don'?t|do not|never|no\b|not\b|exclude|skip|without|leave me out|don'?t (?:split|charge)|no (?:split|charge))/.test(s)) {
     return { type: 'exclude_category', params: { category: cat } }
   }
 
@@ -205,12 +207,12 @@ function validatePolicyParams(
       return { category: canon }
     }
     case 'approval_threshold':
-      if (params.amount_cents == null || !Number.isInteger(params.amount_cents))
-        throw new Error('approval_threshold needs integer amount_cents')
+      if (params.amount_cents == null || !Number.isInteger(params.amount_cents) || params.amount_cents <= 0)
+        throw new Error('approval_threshold needs a positive integer amount_cents')
       return { amount_cents: params.amount_cents }
     case 'split_weight':
-      if (params.weight == null || !Number.isInteger(params.weight))
-        throw new Error('split_weight needs integer weight')
+      if (params.weight == null || !Number.isInteger(params.weight) || params.weight < 1)
+        throw new Error('split_weight needs an integer weight >= 1')
       return { weight: params.weight }
   }
 }

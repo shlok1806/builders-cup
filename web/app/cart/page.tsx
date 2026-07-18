@@ -82,8 +82,8 @@ export default function CartPage() {
     <div className="mx-auto flex min-h-dvh w-full max-w-[440px] flex-col bg-bg">
       <header className="flex items-center justify-between px-5 pt-6 pb-3">
         <div className="flex items-center gap-2.5">
-          <Link href="/" className="press grid h-[38px] w-[38px] place-items-center rounded-full border border-line bg-surface text-ink-soft">
-            <Icon name="home" size={18} />
+          <Link href="/group" aria-label="Back to group" className="press grid h-[38px] w-[38px] place-items-center rounded-full border border-line bg-surface text-ink-soft">
+            <Icon name="back" size={18} />
           </Link>
           <h1 className="font-display text-lg font-bold tracking-tight text-ink">Build a cart</h1>
         </div>

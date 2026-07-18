@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Avatar, CheckBadge, CountUp, Icon, ThemeToggle } from "@/components/ui";
+import { Avatar, CheckBadge, Clock, CountUp, Icon, ThemeToggle } from "@/components/ui";
 import UserSwitcher from "@/components/UserSwitcher";
 import { useMe } from "@/lib/useMe";
 import { categories, household, money, people, totals } from "@/lib/data";
@@ -21,20 +21,52 @@ type Dash = {
   byUser: { userId: string; name: string; cents: number }[];
   budgetCents: number;
   overBudget: boolean;
+  owedCents: number;
+  chargedUsers: number;
+  totalUsers: number;
 };
 
 export default function GroupDashboard() {
   const { me, byId } = useMe();
   const [dash, setDash] = useState<Dash | null>(null);
+  const [pending, setPending] = useState<number | null>(null);
+  const [editBudget, setEditBudget] = useState(false);
+  const [budgetInput, setBudgetInput] = useState("");
+  const [savingBudget, setSavingBudget] = useState(false);
 
   // Live numbers from /api/dashboard; keep the mock as the offline fallback so
   // the landing screen never renders empty.
-  useEffect(() => {
+  const loadDash = () =>
     fetch("/api/dashboard")
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error("bad status"))))
       .then(setDash)
       .catch(() => {});
-  }, []);
+  useEffect(() => { loadDash(); }, []);
+
+  const saveBudget = async () => {
+    const dollars = parseFloat(budgetInput);
+    if (!Number.isFinite(dollars) || dollars < 0) { setEditBudget(false); return; }
+    setSavingBudget(true);
+    await fetch("/api/household", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ monthlyBudgetCents: Math.round(dollars * 100) }),
+    }).catch(() => {});
+    setSavingBudget(false);
+    setEditBudget(false);
+    await loadDash();
+  };
+
+  // Live approval-bell badge for the current user. Won't match the hardcoded
+  // mock once someone flags an item mid-demo, so read it from the same source
+  // the approval device polls.
+  useEffect(() => {
+    if (!me) return;
+    fetch(`/api/approvals?user=${encodeURIComponent(me)}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("bad status"))))
+      .then((d) => setPending(d.pending?.length ?? 0))
+      .catch(() => {});
+  }, [me]);
 
   const spent = dash ? dash.thisMonthCents / 100 : totals.spent;
   const budget = dash ? dash.budgetCents / 100 : totals.budget;
@@ -65,12 +97,17 @@ export default function GroupDashboard() {
         })
     : people.map((p) => ({ id: p.id, name: p.name, initials: p.initials, color: p.color, amount: p.share }));
 
+  const badge = pending ?? totals.needApproval;
+  const owed = dash ? dash.owedCents / 100 : totals.owed;
+  const allSquare = owed <= 0;
+  const charged = dash ? dash.chargedUsers : persons.length;
+  const chargedOf = dash ? dash.totalUsers : persons.length;
+
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-[440px] flex-col bg-bg">
       {/* status bar */}
       <div className="flex items-center justify-between px-6 pt-4 pb-1 text-ink">
-        <span className="font-sans text-sm font-semibold tabular-nums">9:41</span>
-        <span className="text-xs font-semibold tracking-tight">●●● ▮</span>
+        <Clock className="font-sans text-sm font-semibold tabular-nums" />
       </div>
 
       {/* header */}
@@ -87,11 +124,13 @@ export default function GroupDashboard() {
         <div className="flex items-center gap-2.5">
           <UserSwitcher />
           <ThemeToggle />
-          <Link href={`/approve?user=${encodeURIComponent(me)}`} className="press relative grid h-[42px] w-[42px] place-items-center rounded-full border border-line bg-surface text-ink-soft">
+          <Link href={`/approve?user=${encodeURIComponent(me)}`} aria-label="Approvals" className="press relative grid h-[42px] w-[42px] place-items-center rounded-full border border-line bg-surface text-ink-soft">
             <Icon name="bell" size={20} />
-            <span className="absolute -right-0.5 -top-0.5 grid h-[18px] min-w-[18px] place-items-center rounded-full border-2 border-bg bg-warn px-1 text-[10px] font-semibold text-white">
-              {totals.needApproval}
-            </span>
+            {badge > 0 && (
+              <span className="absolute -right-0.5 -top-0.5 grid h-[18px] min-w-[18px] place-items-center rounded-full border-2 border-bg bg-warn px-1 text-[10px] font-semibold text-white">
+                {badge}
+              </span>
+            )}
           </Link>
         </div>
       </header>
@@ -103,7 +142,12 @@ export default function GroupDashboard() {
             <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-accent-ink">Spent this month</span>
             <span className="text-[12.5px] font-semibold text-ink-soft">July ▾</span>
           </div>
-          <CountUp target={spent} className="mt-1 block font-display text-[42px] font-bold leading-none tracking-tight text-ink tabular-nums" />
+          {/* Gate the count-up on live data so it animates once (not mock→real twice). */}
+          {dash ? (
+            <CountUp target={spent} className="mt-1 block font-display text-[42px] font-bold leading-none tracking-tight text-ink tabular-nums" />
+          ) : (
+            <span className="mt-1 block font-display text-[42px] font-bold leading-none tracking-tight text-ink tabular-nums">{money(spent)}</span>
+          )}
 
           <div className="mt-[18px]">
             <div className="flex items-center justify-between text-[12.5px] font-semibold">
@@ -115,9 +159,33 @@ export default function GroupDashboard() {
             <div className="mt-2 h-3 overflow-hidden rounded-full bg-surface-2">
               <div className={`a-grow h-full rounded-full ${overBudget ? "bg-warn" : "bg-accent"}`} style={{ width: `${usedPct}%`, animationDelay: "200ms" }} />
             </div>
-            <div className="mt-1.5 text-[11.5px] font-medium text-ink-faint">
-              {usedPct}% of {money(budget)} used
-            </div>
+            {editBudget ? (
+              <div className="mt-2 flex items-center gap-2">
+                <span className="text-[13px] font-semibold text-ink-soft">$</span>
+                <input
+                  type="number"
+                  min={0}
+                  step={10}
+                  value={budgetInput}
+                  autoFocus
+                  onChange={(e) => setBudgetInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") saveBudget(); if (e.key === "Escape") setEditBudget(false); }}
+                  className="w-24 rounded-lg border border-line bg-bg px-2 py-1 text-[13px] tabular-nums text-ink outline-none focus:border-accent"
+                />
+                <button onClick={saveBudget} disabled={savingBudget} className="press text-[12.5px] font-semibold text-accent-ink disabled:opacity-50">{savingBudget ? "Saving…" : "Save"}</button>
+                <button onClick={() => setEditBudget(false)} className="press text-[12.5px] font-semibold text-ink-faint">Cancel</button>
+              </div>
+            ) : (
+              <div className="mt-1.5 flex items-center gap-2 text-[11.5px] font-medium text-ink-faint">
+                <span>{usedPct}% of {money(budget)} used</span>
+                <button
+                  onClick={() => { setBudgetInput(String(Math.round(budget))); setEditBudget(true); }}
+                  className="press font-semibold text-accent-ink"
+                >
+                  Edit
+                </button>
+              </div>
+            )}
           </div>
 
           {/* all-square panel */}
@@ -125,8 +193,8 @@ export default function GroupDashboard() {
             <div className="flex items-center gap-2.5">
               <CheckBadge size={22} delay={500} />
               <div className="leading-tight">
-                <div className="text-[13.5px] font-semibold text-ink">You&apos;re all square</div>
-                <div className="text-[11.5px] font-medium text-ink-soft">{money(totals.owed)} owed · {persons.length} of {persons.length} charged</div>
+                <div className="text-[13.5px] font-semibold text-ink">{allSquare ? "You're all square" : "Settling up"}</div>
+                <div className="text-[11.5px] font-medium text-ink-soft">{money(owed)} owed · {charged} of {chargedOf} charged</div>
               </div>
             </div>
             <div className="flex">
@@ -143,7 +211,7 @@ export default function GroupDashboard() {
         <section className="a-rise space-y-2.5" style={{ animationDelay: "120ms" }}>
           <div className="flex items-center justify-between px-1">
             <h2 className="font-display text-base font-bold tracking-tight text-ink">Each person&apos;s share</h2>
-            <span className="text-[13px] font-semibold text-accent-ink">See all ›</span>
+            <Link href="/history" className="press text-[13px] font-semibold text-accent-ink">See all ›</Link>
           </div>
           <div className="rounded-[22px] border border-line bg-surface px-4">
             {persons.map((p, i) => (
@@ -196,7 +264,10 @@ export default function GroupDashboard() {
           <Link href="/cart" className="press -mt-1 grid h-[54px] w-[54px] place-items-center rounded-full bg-accent text-on-accent shadow-[0_6px_16px_-2px_rgba(109,90,230,0.5)]">
             <Icon name="plus" size={24} strokeWidth={2.4} />
           </Link>
-          <Tab icon="split" label="Split" />
+          <Link href="/history" className="flex flex-col items-center gap-1.5 text-ink-faint">
+            <Icon name="split" size={24} />
+            <span className="text-[11px] font-semibold">History</span>
+          </Link>
           <Link href="/settings" className="flex flex-col items-center gap-1.5 text-ink-faint">
             <Icon name="rules" size={24} />
             <span className="text-[11px] font-semibold">Rules</span>
@@ -204,14 +275,5 @@ export default function GroupDashboard() {
         </div>
       </nav>
     </div>
-  );
-}
-
-function Tab({ icon, label, active }: { icon: string; label: string; active?: boolean }) {
-  return (
-    <button className={`flex flex-col items-center gap-1.5 ${active ? "text-accent" : "text-ink-faint"}`}>
-      <Icon name={icon} size={24} />
-      <span className="text-[11px] font-semibold">{label}</span>
-    </button>
   );
 }
