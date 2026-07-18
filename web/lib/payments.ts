@@ -1,12 +1,3 @@
-export type ChargeStatus = 'succeeded' | 'failed'
-
-export type CheckoutCharge = {
-  userId: string
-  amountCents: number
-  status: ChargeStatus
-  stripePaymentIntentId?: string | null
-  failureMessage?: string
-}
 
 export type ItemSplitForCheckout = {
   user_id: string

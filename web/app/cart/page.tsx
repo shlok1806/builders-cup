@@ -47,6 +47,7 @@ export default function CartPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [build, setBuild] = useState<BuildResp | null>(null);
   const [auto, setAuto] = useState<string | null>(null);
+  const [buildError, setBuildError] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   const total = build?.items?.reduce((s, it) => s + it.unit_price_cents * it.qty, 0) ?? 0;
@@ -56,6 +57,7 @@ export default function CartPage() {
     if (!q) return;
     setText(q);
     setBusy("Sourcing the cheapest cart…");
+    setBuild(null); setAuto(null); setBuildError(null);
     setBuild(null); setAuto(null); setErr(null);
     const r = await fetch("/api/cart/build", {
       method: "POST",
@@ -148,6 +150,9 @@ export default function CartPage() {
           <p className="a-rise flex items-center gap-2 px-1 text-[13px] font-medium text-ink-soft">
             <Spinner size={15} className="text-accent-ink" /> {busy}
           </p>
+        )}
+        {buildError && (
+          <p role="alert" className="a-rise px-1 text-[13px] font-medium text-warn">{buildError}</p>
         )}
         {auto && (
           <div className="a-rise flex items-center gap-2 rounded-2xl border border-line bg-warn-soft px-4 py-3 text-[13px] font-semibold text-ink">

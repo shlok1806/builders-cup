@@ -5,9 +5,10 @@ export type Member = {
   userId: string
   weight: number // default 1
   excludedCategories: string[]
+  excludedItems: string[] // lowercase keywords; matched as a substring of the item name
   approvalThresholdCents: number | null
 }
-export type Line = { itemId: string; category: string; lineTotalCents: number }
+export type Line = { itemId: string; name: string; category: string; lineTotalCents: number }
 export type Allocation = { itemId: string; userId: string; amountCents: number }
 export type Flag = { itemId: string; approverId: string; rule: string }
 export type SplitResult = { allocations: Allocation[]; flagged: Flag[] }
