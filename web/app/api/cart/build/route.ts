@@ -12,11 +12,10 @@ import { planCart, type Seed } from '@/lib/compose'
 export async function POST(req: Request) {
   const db = admin()
   try {
-    const { text, householdId, createdBy, cartId } = (await req.json()) as {
+    const { text, householdId, createdBy } = (await req.json()) as {
       text?: string
       householdId?: string
       createdBy?: string
-      cartId?: string
     }
     if (!text?.trim()) return NextResponse.json({ error: 'text required' }, { status: 400 })
 
@@ -45,20 +44,21 @@ export async function POST(req: Request) {
 
     const plan = await planCart({ householdId: hhId, request: text, seeds, dueNames })
 
-    // Running cart: if the client passes an existing building cart, append to it;
-    // otherwise open a new one. ponytail: we trust the client's cartId (single
-    // household, no auth); scope by household/user once accounts exist.
+    // SHARED cart: append to the household's open `building` purchase so every
+    // member builds into the same cart, regardless of which device started it.
+    // Only open a new cart when none is currently building. (The client no longer
+    // dictates the cart id — that made carts per-browser.)
     let purchaseId: string
-    if (cartId) {
-      const { data: existing } = await db
-        .from('purchases')
-        .select('id, status')
-        .eq('id', cartId)
-        .single()
-      if (!existing || existing.status !== 'building') {
-        return NextResponse.json({ error: 'cart not open' }, { status: 409 })
-      }
-      purchaseId = existing.id as string
+    const { data: open } = await db
+      .from('purchases')
+      .select('id')
+      .eq('household_id', hhId)
+      .eq('status', 'building')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (open) {
+      purchaseId = open.id as string
     } else {
       const { data: purchase, error: pErr } = await db
         .from('purchases')
