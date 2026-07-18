@@ -1,5 +1,6 @@
 import { admin } from './supabase'
 import { getOffers } from './scrape'
+import { getHouseholdAllowlist } from './allowlist-store'
 import { composeCart, type ComposeCandidate, type Skipped } from './openai'
 import type { OfferRow } from './types'
 
@@ -78,6 +79,9 @@ export async function planCart(opts: {
   const spent = await monthSpendCents(db, opts.householdId)
   const budgetRemainingCents = budgetCents > 0 ? Math.max(0, budgetCents - spent) : 0
 
+  // The household's trusted-store allowlist (null → getOffers uses the default).
+  const allowedVendors = (await getHouseholdAllowlist(opts.householdId)) ?? undefined
+
   const dueNames = opts.dueNames ?? new Set<string>()
   const recentSet = new Set((opts.recentNames ?? []).map((n) => n.toLowerCase()))
 
@@ -96,7 +100,7 @@ export async function planCart(opts: {
   const sourced: Sourced[] = []
   let dealsCompared = 0
   for (const seed of seeds) {
-    const offers = await getOffers(seed.name, { category: seed.category })
+    const offers = await getOffers(seed.name, { category: seed.category, allowedVendors })
     dealsCompared += offers.length
     const inStock = offers.filter((o) => o.in_stock).sort((a, b) => a.price_cents - b.price_cents)
     const best = inStock[0] ?? null

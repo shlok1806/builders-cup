@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { getForQuery, normalizeQuery, synthesizeOffers } from './fixtures'
+import { isVendorAllowed } from './allowlist'
 import { serpapi } from './adapters/serpapi'
 
 // Swap the service-role client for an in-memory fake so the orchestrator can be
@@ -43,6 +44,27 @@ describe('synthesizeOffers', () => {
     expect(prices).toEqual([...prices].sort((a, b) => a - b))
     expect(new Set(prices).size).toBe(3)
     expect(offers[0].raw).toMatchObject({ synthetic: true })
+  })
+})
+
+describe('isVendorAllowed', () => {
+  it('accepts default reputable retailers, including messy SerpAPI source strings', () => {
+    expect(isVendorAllowed('Walmart')).toBe(true)
+    expect(isVendorAllowed('Walmart - Seller')).toBe(true) // "- Seller" suffix
+    expect(isVendorAllowed('Amazon.com')).toBe(true) // ".com" suffix
+    expect(isVendorAllowed("Sam's Club")).toBe(true)
+  })
+
+  it('rejects unknown / unvetted vendors and empty sources', () => {
+    expect(isVendorAllowed('SketchyDropship LLC')).toBe(false)
+    expect(isVendorAllowed('')).toBe(false)
+    expect(isVendorAllowed('   ')).toBe(false)
+  })
+
+  it('honors a household override list', () => {
+    const only = ['Target']
+    expect(isVendorAllowed('Target', only)).toBe(true)
+    expect(isVendorAllowed('Walmart', only)).toBe(false) // trusted by default, off here
   })
 })
 

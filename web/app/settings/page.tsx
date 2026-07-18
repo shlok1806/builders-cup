@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Icon } from "@/components/ui";
 import UserSwitcher from "@/components/UserSwitcher";
+import TrustedStores from "@/components/TrustedStores";
 import { useMe } from "@/lib/useMe";
 
 // F3 UI — a user's rules. List their compiled policies; type a plain-English rule
@@ -134,6 +135,8 @@ export default function Settings() {
             </div>
           ))}
         </section>
+
+        <TrustedStores />
 
         <section className="space-y-3">
           <h2 className="font-display text-base font-bold text-ink">Recurring carts</h2>
