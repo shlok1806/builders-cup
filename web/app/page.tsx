@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { Avatar, CheckBadge, CountUp, Icon, ThemeToggle } from "@/components/ui";
+import UserSwitcher from "@/components/UserSwitcher";
 import { categories, household, money, people, totals } from "@/lib/data";
 
 // Literal class names so Tailwind generates them.
@@ -29,6 +30,7 @@ export default function Home() {
           </div>
         </div>
         <div className="flex items-center gap-2.5">
+          <UserSwitcher />
           <ThemeToggle />
           <Link href="/approve?user=sam" className="press relative grid h-[42px] w-[42px] place-items-center rounded-full border border-line bg-surface text-ink-soft">
             <Icon name="bell" size={20} />
@@ -130,10 +132,13 @@ export default function Home() {
       <nav className="fixed bottom-0 left-1/2 z-10 w-full max-w-[440px] -translate-x-1/2 border-t border-line bg-surface px-8 pt-3 pb-8">
         <div className="flex items-center justify-between">
           <Tab icon="home" label="Home" active />
-          <Tab icon="cart" label="Cart" />
-          <button className="press -mt-1 grid h-[54px] w-[54px] place-items-center rounded-full bg-accent text-on-accent shadow-[0_6px_16px_-2px_rgba(109,90,230,0.5)]">
+          <Link href="/cart" className="flex flex-col items-center gap-1.5 text-ink-faint">
+            <Icon name="cart" size={24} />
+            <span className="text-[11px] font-semibold">Cart</span>
+          </Link>
+          <Link href="/cart" className="press -mt-1 grid h-[54px] w-[54px] place-items-center rounded-full bg-accent text-on-accent shadow-[0_6px_16px_-2px_rgba(109,90,230,0.5)]">
             <Icon name="plus" size={24} strokeWidth={2.4} />
-          </button>
+          </Link>
           <Tab icon="split" label="Split" />
           <Tab icon="rules" label="Rules" />
         </div>
