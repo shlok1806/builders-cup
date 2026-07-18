@@ -5,6 +5,7 @@ export type CheckoutCharge = {
   amountCents: number
   status: ChargeStatus
   stripePaymentIntentId?: string | null
+  failureMessage?: string
 }
 
 export type ItemSplitForCheckout = {

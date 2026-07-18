@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Avatar, Clock, Icon, ThemeToggle } from "@/components/ui";
+import { Avatar, CartTab, Clock, Icon, ThemeToggle } from "@/components/ui";
 import UserSwitcher from "@/components/UserSwitcher";
 import { useMe } from "@/lib/useMe";
-import { household, money, totals } from "@/lib/data";
+import { household, money } from "@/lib/data";
 
 type Dash = {
   thisMonthCents: number;
@@ -26,11 +26,11 @@ export default function Groups() {
       .catch(() => {});
   }, []);
 
-  // Fall back to the mock totals (like the group dashboard) so a slow/failed
-  // /api/dashboard shows plausible numbers, not a broken-looking $0.00.
-  const total = dash ? dash.thisMonthCents / 100 : totals.spent;
+  // Start at 0 while /api/dashboard is loading rather than flashing a mock
+  // number that doesn't match the real total once it resolves.
+  const total = dash ? dash.thisMonthCents / 100 : 0;
   const liveShare = dash?.byUser.find((u) => u.userId === me)?.cents;
-  const myShare = liveShare != null ? liveShare / 100 : totals.spent / Math.max(1, users.length);
+  const myShare = liveShare != null ? liveShare / 100 : 0;
   const members = users.length;
 
   return (
@@ -93,10 +93,7 @@ export default function Groups() {
       <nav className="fixed bottom-0 left-1/2 z-10 w-full max-w-[440px] -translate-x-1/2 border-t border-line bg-surface px-8 pt-3 pb-8">
         <div className="flex items-center justify-between">
           <Tab icon="home" label="Home" active />
-          <Link href="/cart" className="flex flex-col items-center gap-1.5 text-ink-faint">
-            <Icon name="cart" size={24} />
-            <span className="text-[11px] font-semibold">Cart</span>
-          </Link>
+          <CartTab />
           <Link href="/cart" className="press -mt-1 grid h-[54px] w-[54px] place-items-center rounded-full bg-accent text-on-accent shadow-[0_6px_16px_-2px_rgba(109,90,230,0.5)]">
             <Icon name="plus" size={24} strokeWidth={2.4} />
           </Link>

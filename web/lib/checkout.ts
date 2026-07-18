@@ -107,7 +107,13 @@ export async function checkoutPurchase(purchaseId: string, supabase = admin()): 
   for (const total of totals) {
     const paymentMethod = paymentMethodByUser.get(total.userId)
     if (!paymentMethod) {
-      charges.push({ userId: total.userId, amountCents: total.amountCents, status: 'failed', stripePaymentIntentId: null })
+      charges.push({
+        userId: total.userId,
+        amountCents: total.amountCents,
+        status: 'failed',
+        stripePaymentIntentId: null,
+        failureMessage: 'No payment method is saved for this member',
+      })
       continue
     }
 
@@ -120,7 +126,7 @@ export async function checkoutPurchase(purchaseId: string, supabase = admin()): 
         `${purchaseId}:${total.userId}:${total.amountCents}`,
       )
     } catch {
-      result = { piId: null, status: 'failed' }
+      result = { piId: null, status: 'failed', failureMessage: 'Stripe could not complete the payment' }
     }
 
     charges.push({
@@ -128,6 +134,7 @@ export async function checkoutPurchase(purchaseId: string, supabase = admin()): 
       amountCents: total.amountCents,
       status: result.status,
       stripePaymentIntentId: result.piId,
+      ...(result.failureMessage ? { failureMessage: result.failureMessage } : {}),
     })
   }
 
