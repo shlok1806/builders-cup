@@ -156,6 +156,12 @@ export type ComposeCandidate = {
   offersCount: number
   dueSoon: boolean // predicted to run out within the restock horizon
   boughtRecently: boolean
+  // Learned from the household's own purchase history (see lib/learn.ts). Absent for
+  // items the house has never bought — the composer treats those conservatively.
+  purchaseCount?: number // times the house has bought this before
+  typicalQty?: number // the qty they usually buy
+  cadenceDays?: number | null // how often they rebuy it
+  confidence?: number // 0..1 — how sure we are it's a standing need
 }
 export type ComposeContext = {
   request?: string // the free-text ask, if any (absent for autonomous restock)
@@ -170,7 +176,8 @@ You are given candidate items with REAL sourced facts (cheapest price in cents, 
 Decide the smartest cart:
 - Prefer items that are running low (dueSoon) or explicitly requested.
 - DO NOT re-buy something marked boughtRecently — put it in "skipped" with a short reason.
-- Choose sensible quantities (usually 1; more only if clearly implied).
+- Some candidates carry what we have LEARNED from this household's own history: how many times they've bought it (purchaseCount), the quantity they usually buy (typicalQty), how often they rebuy it (cadenceDays), and a confidence (0..1) that it's a standing need. Treat high-confidence, regularly bought items as the house's staples — include them at their typicalQty without hesitation, even without an explicit request. Be more conservative with low- or no-confidence items (little or no history): only add them when requested or clearly running low. This is how the cart learns to build itself.
+- Choose sensible quantities (default to typicalQty when we have one, otherwise 1; more only if clearly implied).
 - Keep the cart's total (sum of unitPriceCents × qty) within budgetRemainingCents when it is > 0; if you must cut, drop the lowest-priority items and skip them with reason "trimmed to stay within budget".
 - You may ONLY choose items by their exact candidate name. Never invent an item or a price.
 Give each chosen item a one-phrase reason (e.g. "running low", "cheapest of 3", "for Friday").`
@@ -215,6 +222,7 @@ export function composeHeuristic(ctx: ComposeContext): ComposeDecision {
     .sort(
       (a, b) =>
         Number(b.c.dueSoon) - Number(a.c.dueSoon) ||
+        (b.c.confidence ?? 0) - (a.c.confidence ?? 0) ||
         b.c.savingsCents - a.c.savingsCents ||
         a.i - b.i
     )
@@ -228,12 +236,13 @@ export function composeHeuristic(ctx: ComposeContext): ComposeDecision {
       skipped.push({ name: c.name, reason: 'bought recently' })
       continue
     }
-    if (ctx.budgetRemainingCents > 0 && total + c.unitPriceCents > ctx.budgetRemainingCents) {
+    const qty = Math.max(1, c.typicalQty ?? 1)
+    if (ctx.budgetRemainingCents > 0 && total + c.unitPriceCents * qty > ctx.budgetRemainingCents) {
       skipped.push({ name: c.name, reason: 'trimmed to stay within budget' })
       continue
     }
-    total += c.unitPriceCents
-    items.push({ name: c.name, qty: 1, reason: c.dueSoon ? 'running low' : null })
+    total += c.unitPriceCents * qty
+    items.push({ name: c.name, qty, reason: c.dueSoon ? 'running low' : null })
   }
   return { items, skipped }
 }

@@ -4,16 +4,43 @@ import { admin } from '@/lib/supabase'
 // The running cart is a purchase; these read/mutate its lines for the /checkout
 // page. GET lists items + subtotal; DELETE ?item=<id> removes one line and
 // re-reconciles the stored subtotal.
-type Row = { id: string; name: string; qty: number; unit_price_cents: number; category: string }
+type Row = {
+  id: string
+  name: string
+  qty: number
+  unit_price_cents: number
+  category: string
+  products: { name: string } | null
+  offers: { url: string | null } | null
+}
+type Item = {
+  id: string
+  name: string
+  productName: string
+  url: string | null
+  qty: number
+  unit_price_cents: number
+  category: string
+}
 
 async function loadCart(db: ReturnType<typeof admin>, id: string) {
+  // Embed the canonical product name and the sourced offer's URL so /checkout can
+  // show the real item + a link out, matching the add-to-cart screen.
   const { data, error } = await db
     .from('purchase_items')
-    .select('id, name, qty, unit_price_cents, category')
+    .select('id, name, qty, unit_price_cents, category, products(name), offers(url)')
     .eq('purchase_id', id)
     .order('name', { ascending: true })
   if (error) throw error
-  const items = (data ?? []) as Row[]
+  const items: Item[] = ((data ?? []) as unknown as Row[]).map((r) => ({
+    id: r.id,
+    name: r.name,
+    productName: r.products?.name ?? r.name,
+    url: r.offers?.url ?? null,
+    qty: r.qty,
+    unit_price_cents: r.unit_price_cents,
+    category: r.category,
+  }))
   const subtotalCents = items.reduce((s, i) => s + i.unit_price_cents * i.qty, 0)
   return { items, subtotalCents }
 }

@@ -13,7 +13,30 @@ import { clearCart, setCart, useCart } from "@/lib/useCart";
 
 const cents = (c: number) => money(c / 100);
 
-type Item = { id: string; name: string; qty: number; unit_price_cents: number; category: string };
+// Hard floor before the group can check out — a stand-in for "the cart is big
+// enough to bundle into one order". Later this becomes a smarter bundling
+// threshold; for now it's a flat minimum on total item quantity.
+const MIN_CHECKOUT_ITEMS = 10;
+
+type Item = { id: string; name: string; productName: string; url: string | null; qty: number; unit_price_cents: number; category: string };
+// Identical items (same sourced product + price) collapse into one row shown as
+// "×N"; we keep the underlying line ids so removing the row deletes them all.
+type Group = { key: string; ids: string[]; name: string; productName: string; url: string | null; category: string; qty: number; unit_price_cents: number };
+
+function groupItems(items: Item[]): Group[] {
+  const map = new Map<string, Group>();
+  for (const it of items) {
+    const key = `${it.productName}|${it.unit_price_cents}`;
+    const g = map.get(key);
+    if (g) {
+      g.qty += it.qty;
+      g.ids.push(it.id);
+    } else {
+      map.set(key, { key, ids: [it.id], name: it.name, productName: it.productName, url: it.url, category: it.category, qty: it.qty, unit_price_cents: it.unit_price_cents });
+    }
+  }
+  return [...map.values()];
+}
 type SplitLine = {
   itemId: string;
   name: string;
@@ -48,10 +71,15 @@ export default function CheckoutPage() {
     if (cartId) load(cartId);
   }, [cartId, load]);
 
-  async function removeItem(itemId: string) {
+  async function removeGroup(ids: string[]) {
     if (!cartId) return;
-    const r = await fetch(`/api/cart/${cartId}?item=${itemId}`, { method: "DELETE" });
-    const j = await r.json();
+    // Remove every underlying line for the collapsed row; the last response has
+    // the reconciled cart.
+    let j: { items?: Item[]; subtotalCents?: number } = {};
+    for (const id of ids) {
+      const r = await fetch(`/api/cart/${cartId}?item=${id}`, { method: "DELETE" });
+      j = await r.json();
+    }
     const list: Item[] = j.items ?? [];
     setItems(list);
     setSubtotal(j.subtotalCents ?? 0);
@@ -86,7 +114,11 @@ export default function CheckoutPage() {
   }
 
   const name = (id: string) => byId[id]?.name ?? id.slice(0, 6);
-  const recorded = completed;
+  const groups = items ? groupItems(items) : [];
+  const totalQty = items ? items.reduce((s, it) => s + it.qty, 0) : 0;
+  const belowMin = totalQty < MIN_CHECKOUT_ITEMS;
+  const remaining = Math.max(0, MIN_CHECKOUT_ITEMS - totalQty);
+  const paid = charges != null && charges.length > 0 && charges.every((c) => c.status === "succeeded");
   // cartId===null means no running cart at all → empty. Otherwise wait for the fetch.
   const empty = cartId === null || (items != null && items.length === 0);
   const loading = cartId !== null && items == null;
@@ -127,28 +159,46 @@ export default function CheckoutPage() {
           <>
             <section className="a-rise space-y-2.5" style={{ animationDelay: "40ms" }}>
               <div className="overflow-hidden rounded-[22px] border border-line bg-surface">
-                {items.map((it, i) => (
-                  <div key={it.id} className={`flex items-center gap-3 px-4 py-3 ${i < items.length - 1 ? "border-b border-line" : ""}`}>
+                {groups.map((g, i) => (
+                  <div key={g.key} className={`flex items-center gap-3 px-4 py-3 ${i < groups.length - 1 ? "border-b border-line" : ""}`}>
                     <div className="min-w-0 flex-1 leading-tight">
-                      <div className="truncate text-sm font-semibold text-ink">{it.qty > 1 ? `${it.qty}× ` : ""}{it.name}</div>
-                      <div className="mt-0.5 text-[11px] font-medium text-ink-faint">{it.category}</div>
+                      {g.url ? (
+                        <a href={g.url} target="_blank" rel="noopener noreferrer" className="press flex items-center gap-1 text-sm font-semibold text-ink hover:text-accent-ink">
+                          <span className="truncate">{g.qty > 1 ? `${g.qty}× ` : ""}{g.productName}</span>
+                          <Icon name="external" size={12} strokeWidth={2.2} className="shrink-0 text-ink-faint" />
+                        </a>
+                      ) : (
+                        <div className="truncate text-sm font-semibold text-ink">{g.qty > 1 ? `${g.qty}× ` : ""}{g.productName}</div>
+                      )}
+                      {g.productName.toLowerCase() !== g.name.toLowerCase() && (
+                        <div className="mt-0.5 truncate text-[11px] font-medium capitalize text-ink-faint">for {g.name}</div>
+                      )}
+                      <div className="mt-0.5 text-[11px] font-medium text-ink-faint">{g.category}</div>
                     </div>
-                    <div className="font-display text-[15px] font-bold tabular-nums text-ink">{cents(it.unit_price_cents * it.qty)}</div>
-                    <button onClick={() => removeItem(it.id)} aria-label={`Remove ${it.name}`} className="press grid h-7 w-7 place-items-center rounded-full text-ink-faint hover:text-warn">
+                    <div className="font-display text-[15px] font-bold tabular-nums text-ink">{cents(g.unit_price_cents * g.qty)}</div>
+                    <button onClick={() => removeGroup(g.ids)} aria-label={`Remove ${g.productName}`} className="press grid h-7 w-7 place-items-center rounded-full text-ink-faint hover:text-warn">
                       <Icon name="x" size={15} />
                     </button>
                   </div>
                 ))}
                 <div className="flex items-center justify-between bg-surface-2 px-4 py-2.5">
-                  <span className="text-[12.5px] font-semibold text-ink-soft">Subtotal</span>
+                  <span className="text-[12.5px] font-semibold text-ink-soft">Subtotal · {totalQty} item{totalQty === 1 ? "" : "s"}</span>
                   <span className="font-display text-[15px] font-bold tabular-nums text-ink">{cents(subtotal)}</span>
                 </div>
               </div>
 
               {!lines && (
-                <button onClick={runSplit} disabled={!!busy} className="press w-full rounded-2xl bg-accent py-3 text-[14px] font-semibold text-on-accent disabled:opacity-40">
-                  {busy ?? "Split by everyone's rules"}
-                </button>
+                <>
+                  {belowMin && (
+                    <div className="rounded-2xl border border-line bg-warn-soft px-4 py-3 text-[12.5px] font-semibold text-ink">
+                      Add {remaining} more item{remaining === 1 ? "" : "s"} to check out — the cart needs at least {MIN_CHECKOUT_ITEMS} to bundle into one order.
+                      <Link href="/cart" className="press ml-1 text-accent-ink">Add more ›</Link>
+                    </div>
+                  )}
+                  <button onClick={runSplit} disabled={!!busy || belowMin} className="press w-full rounded-2xl bg-accent py-3 text-[14px] font-semibold text-on-accent disabled:opacity-40">
+                    {busy ?? (belowMin ? `${totalQty} / ${MIN_CHECKOUT_ITEMS} items to check out` : "Split by everyone's rules")}
+                  </button>
+                </>
               )}
             </section>
 
