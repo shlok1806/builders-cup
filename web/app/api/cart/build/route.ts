@@ -12,7 +12,7 @@ import {
   getRecentPurchaseNames,
   createBuildingPurchase,
   insertPurchaseItems,
-} from "@/lib/data";
+} from "@/lib/agent-data";
 import { HOUSEHOLD_ID } from "@/lib/catalog.fixture";
 
 export async function POST(req: Request) {

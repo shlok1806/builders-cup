@@ -6,7 +6,7 @@
 
 import { NextResponse } from "next/server";
 import { compilePolicy } from "@/lib/openai";
-import { insertPolicy } from "@/lib/data";
+import { insertPolicy } from "@/lib/agent-data";
 import { HOUSEHOLD_ID } from "@/lib/catalog.fixture";
 
 export async function POST(req: Request) {
