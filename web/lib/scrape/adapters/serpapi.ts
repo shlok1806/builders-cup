@@ -10,6 +10,11 @@ const TIMEOUT_MS = 12000
 // fix there. 401 / quota / {error} won't recover, so they fail straight to fallback.
 const MAX_RETRIES = 1
 const RETRY_BACKOFF_MS = 1000
+// Google Shopping returns ~40 listings; we only need enough to dedupe to a handful
+// of vendors and pick the cheapest. Keep the top-N by relevance — the tail is
+// niche/mismatched listings (e.g. a single roll when you asked for a 90-count box)
+// that just add noise and DB writes. The household allowlist prunes further.
+const MAX_RESULTS = 15
 
 // Google Shopping via SerpAPI — one call returns listings across many merchants,
 // exactly the multi-vendor shape `offers` wants. Deterministic, real prices we
@@ -63,6 +68,7 @@ export const serpapi: Adapter = {
         }
         const offers = (json.shopping_results ?? [])
           .filter((r) => typeof r.extracted_price === 'number' && !!r.source)
+          .slice(0, MAX_RESULTS) // top-N by relevance; drop the long niche tail
           .map((r) => ({
             vendor: r.source as string,
             title: r.title ?? query,
@@ -73,7 +79,7 @@ export const serpapi: Adapter = {
             raw: r,
           }))
         console.log(
-          `[serpapi] "${query}" → OK${label} (${ms}ms): ${json.shopping_results?.length ?? 0} results, ${offers.length} usable offer(s)`
+          `[serpapi] "${query}" → OK${label} (${ms}ms): ${json.shopping_results?.length ?? 0} results, kept ${offers.length} (cap ${MAX_RESULTS})`
         )
         return offers
       } catch (e) {
