@@ -77,5 +77,14 @@ export async function getOffers(
     finished_at: new Date().toISOString(),
   })
 
+  // Provenance log — `source` tells you at a glance whether these prices are real
+  // (serpapi) or a fallback (fixtures = cached demo data, synthetic = made-up).
+  const cheapest = inserted.slice().sort((a, b) => a.price_cents - b.price_cents)[0]
+  const tag = source === 'synthetic' ? 'SYNTHETIC (made-up)' : source === 'fixtures' ? 'fixtures (cached)' : source
+  console.log(
+    `[scrape] "${query}" → ${tag} · ${inserted.length} offer(s)` +
+      (cheapest ? ` · cheapest ${cheapest.vendor} $${(cheapest.price_cents / 100).toFixed(2)}` : '')
+  )
+
   return inserted
 }
