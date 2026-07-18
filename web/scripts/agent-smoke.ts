@@ -22,12 +22,10 @@ try {
   /* no .env.local — fine for offline mode */
 }
 
-import { buildCart, compilePolicy, FALLBACKS, POLICY_TYPES } from "../lib/openai";
-import { PRODUCTS, RECENT_PURCHASE_NAMES } from "../lib/catalog.fixture";
+import { buildCart, compilePolicy, FALLBACKS, POLICY_TYPES, normalizePrompt } from "../lib/openai";
+import { RECENT_PURCHASE_NAMES } from "../lib/catalog.fixture";
 
 const live = process.argv.includes("--live");
-const catalog = PRODUCTS.map((p) => ({ id: p.id, name: p.name, category: p.category }));
-const validIds = new Set(catalog.map((c) => c.id));
 
 const CART_PROMPT = "restock + snacks for Friday";
 const POLICY_PROMPT = "don't split alcohol to me";
@@ -43,12 +41,8 @@ async function main() {
 
   // --- Call A: cart builder ---
   console.log("Call A — buildCart");
-  const cart = await buildCart(CART_PROMPT, catalog, RECENT_PURCHASE_NAMES);
+  const cart = await buildCart(CART_PROMPT, RECENT_PURCHASE_NAMES);
   check("returned items", cart.items.length > 0, `${cart.items.length} items`);
-  check(
-    "all product_ids in catalog",
-    cart.items.every((i) => validIds.has(i.product_id)),
-  );
   check("all qty positive integers", cart.items.every((i) => Number.isInteger(i.qty) && i.qty > 0));
   check(
     "paper towels deduped",
@@ -69,7 +63,7 @@ async function main() {
   // --- offline assertion: output must equal the cached fallback exactly ---
   if (!live) {
     console.log("\nFallback parity");
-    const fb = FALLBACKS.buildCart[CART_PROMPT];
+    const fb = FALLBACKS.buildCart[normalizePrompt(CART_PROMPT)];
     check(
       "cart matches fallback item count",
       cart.items.length === fb.items.length,

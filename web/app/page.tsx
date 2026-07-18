@@ -105,3 +105,17 @@ export default function Groups() {
     </div>
   );
 }
+
+// Bottom-bar tab. Presentational in this demo — Home is the active landing;
+// Split/Rules are inert placeholders (matches the decorative "New group").
+function Tab({ icon, label, active }: { icon: string; label: string; active?: boolean }) {
+  return (
+    <button
+      type="button"
+      className={`flex flex-col items-center gap-1.5 ${active ? "text-accent" : "text-ink-faint"}`}
+    >
+      <Icon name={icon} size={24} />
+      <span className="text-[11px] font-semibold">{label}</span>
+    </button>
+  );
+}
