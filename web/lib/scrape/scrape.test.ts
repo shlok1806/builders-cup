@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { getForQuery, normalizeQuery, synthesizeOffers } from './fixtures'
+import { isVendorAllowed } from './allowlist'
 import { serpapi } from './adapters/serpapi'
 
 // Swap the service-role client for an in-memory fake so the orchestrator can be
@@ -46,6 +47,27 @@ describe('synthesizeOffers', () => {
   })
 })
 
+describe('isVendorAllowed', () => {
+  it('accepts default reputable retailers, including messy SerpAPI source strings', () => {
+    expect(isVendorAllowed('Walmart')).toBe(true)
+    expect(isVendorAllowed('Walmart - Seller')).toBe(true) // "- Seller" suffix
+    expect(isVendorAllowed('Amazon.com')).toBe(true) // ".com" suffix
+    expect(isVendorAllowed("Sam's Club")).toBe(true)
+  })
+
+  it('rejects unknown / unvetted vendors and empty sources', () => {
+    expect(isVendorAllowed('SketchyDropship LLC')).toBe(false)
+    expect(isVendorAllowed('')).toBe(false)
+    expect(isVendorAllowed('   ')).toBe(false)
+  })
+
+  it('honors a household override list', () => {
+    const only = ['Target']
+    expect(isVendorAllowed('Target', only)).toBe(true)
+    expect(isVendorAllowed('Walmart', only)).toBe(false) // trusted by default, off here
+  })
+})
+
 describe('serpapi adapter', () => {
   const realFetch = globalThis.fetch
   afterEach(() => {
@@ -88,8 +110,47 @@ describe('serpapi adapter', () => {
 
   it('returns [] on a non-ok response', async () => {
     process.env.SERPAPI_KEY = 'test-key'
-    globalThis.fetch = vi.fn(async () => ({ ok: false, json: async () => ({}) })) as unknown as typeof fetch
+    globalThis.fetch = vi.fn(async () => ({ ok: false, status: 401, json: async () => ({}) })) as unknown as typeof fetch
     expect(await serpapi.fetchOffers('coffee')).toEqual([])
+  })
+
+  it('retries once on a 429 then maps the successful response', async () => {
+    process.env.SERPAPI_KEY = 'test-key'
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 429, text: async () => 'rate limited', json: async () => ({}) })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ shopping_results: [{ title: 'Bags', source: 'Walmart', extracted_price: 8.58 }] }),
+      })
+    globalThis.fetch = fetchSpy as unknown as typeof fetch
+
+    const offers = await serpapi.fetchOffers('trash bags')
+    expect(fetchSpy).toHaveBeenCalledTimes(2) // original + one retry
+    expect(offers).toHaveLength(1)
+    expect(offers[0]).toMatchObject({ vendor: 'Walmart', priceCents: 858 })
+  })
+
+  it('does not retry a 401 (bad key never recovers)', async () => {
+    process.env.SERPAPI_KEY = 'test-key'
+    const fetchSpy = vi.fn(async () => ({ ok: false, status: 401, text: async () => 'bad key', json: async () => ({}) }))
+    globalThis.fetch = fetchSpy as unknown as typeof fetch
+
+    expect(await serpapi.fetchOffers('coffee')).toEqual([])
+    expect(fetchSpy).toHaveBeenCalledTimes(1) // no retry — fail fast to fallback
+  })
+
+  it('does not retry a client timeout (may already be charged)', async () => {
+    process.env.SERPAPI_KEY = 'test-key'
+    const fetchSpy = vi.fn(async () => {
+      const err = new Error('aborted')
+      err.name = 'AbortError'
+      throw err
+    })
+    globalThis.fetch = fetchSpy as unknown as typeof fetch
+
+    expect(await serpapi.fetchOffers('coffee')).toEqual([])
+    expect(fetchSpy).toHaveBeenCalledTimes(1) // timeout is terminal, no re-call
   })
 
   it('returns [] when the request throws', async () => {

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { Icon } from "@/components/ui";
+import { Icon, Spinner } from "@/components/ui";
 import { money } from "@/lib/data";
 import { setCart, useCart } from "@/lib/useCart";
 
@@ -21,6 +21,7 @@ const EXAMPLES = [
 type BuiltItem = {
   id: string;
   name: string;
+  productName: string;
   qty: number;
   category: string;
   unit_price_cents: number;
@@ -123,12 +124,17 @@ export default function CartPage() {
               </button>
             ))}
           </div>
-          <button onClick={() => runBuild(text)} disabled={!!busy || !text.trim()} className="press mt-3 w-full rounded-2xl bg-accent py-3 text-[14px] font-semibold text-on-accent disabled:opacity-40">
-            {busy ? "Working…" : "Add to cart"}
+          <button onClick={() => runBuild(text)} disabled={!!busy || !text.trim()} className="press mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-accent py-3 text-[14px] font-semibold text-on-accent disabled:opacity-40">
+            {busy && <Spinner size={15} />}
+            {busy ? "Working…" : "Build cart"}
           </button>
         </section>
 
-        {busy && <p className="a-rise px-1 text-[13px] font-medium text-ink-soft">{busy}</p>}
+        {busy && (
+          <p className="a-rise flex items-center gap-2 px-1 text-[13px] font-medium text-ink-soft">
+            <Spinner size={15} className="text-accent-ink" /> {busy}
+          </p>
+        )}
         {auto && (
           <div className="a-rise flex items-center gap-2 rounded-2xl border border-line bg-warn-soft px-4 py-3 text-[13px] font-semibold text-ink">
             <span className="rounded-full bg-warn px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">Due this week</span>
@@ -157,8 +163,19 @@ export default function CartPage() {
                 {build.items.map((it, i) => (
                   <div key={it.id} className={`flex items-start gap-3 px-4 py-3 ${i < build.items.length - 1 ? "border-b border-line" : ""}`}>
                     <div className="min-w-0 flex-1 leading-tight">
-                      <div className="truncate text-sm font-semibold text-ink">{it.qty > 1 ? `${it.qty}× ` : ""}{it.name}</div>
+                      {it.url ? (
+                        <a href={it.url} target="_blank" rel="noopener noreferrer" className="press flex items-center gap-1 text-sm font-semibold text-ink hover:text-accent-ink">
+                          <span className="truncate">{it.productName}</span>
+                          <Icon name="external" size={12} strokeWidth={2.2} className="shrink-0 text-ink-faint" />
+                        </a>
+                      ) : (
+                        <div className="truncate text-sm font-semibold text-ink">{it.productName}</div>
+                      )}
+                      {it.productName.toLowerCase() !== it.name.toLowerCase() && (
+                        <div className="mt-0.5 truncate text-[11px] font-medium capitalize text-ink-faint">for {it.name}</div>
+                      )}
                       <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] font-medium text-ink-faint">
+                        <span className="rounded bg-surface-2 px-1.5 py-0.5 font-semibold text-ink-soft">Qty {it.qty}</span>
                         <span className="rounded bg-surface-2 px-1.5 py-0.5 text-positive">{it.vendor}</span>
                         {it.offersCount > 1 && <span>cheapest of {it.offersCount}</span>}
                         {it.reason && <span className="rounded bg-surface-2 px-1.5 py-0.5 text-accent-ink">{it.reason}</span>}
