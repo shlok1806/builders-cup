@@ -25,6 +25,8 @@ export default function Settings() {
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [carts, setCarts] = useState<{ id: string; name: string; decision: "always" | "ask" | "never" }[]>([]);
   const meName = users.find((u) => u.id === me)?.name ?? "you";
 
   const load = async () => {
@@ -37,10 +39,37 @@ export default function Settings() {
   // eslint-disable-next-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
   useEffect(() => { load(); }, [me]);
 
+  useEffect(() => {
+    if (!me) return;
+    fetch(`/api/recurring?user=${encodeURIComponent(me)}`)
+      .then((r) => (r.ok ? r.json() : { carts: [] }))
+      .then((j) => setCarts(j.carts ?? []))
+      .catch(() => {});
+  }, [me]);
+
+  const setDecision = async (id: string, decision: "always" | "ask" | "never") => {
+    setCarts((cs) => cs.map((c) => (c.id === id ? { ...c, decision } : c)));
+    await fetch(`/api/recurring/${id}/decision`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ approverId: me, decision }),
+    }).catch(() => {});
+  };
+
+  const reorder = async (id: string) => {
+    const r = await fetch(`/api/recurring/${id}/run`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ userId: me }),
+    });
+    if (r.ok) window.location.href = "/cart";
+  };
+
   const add = async () => {
     const t = text.trim();
     if (!t || !me) return;
     setBusy(true);
+    setErr("");
     try {
       const r = await fetch("/api/policy/compile", {
         method: "POST",
@@ -48,7 +77,8 @@ export default function Settings() {
         body: JSON.stringify({ userId: me, text: t }),
       });
       if (r.ok) { setText(""); await load(); }
-    } catch {} finally { setBusy(false); }
+      else setErr((await r.json().catch(() => ({}))).error ?? "Couldn't save that rule.");
+    } catch { setErr("Couldn't reach the server."); } finally { setBusy(false); }
   };
 
   return (
@@ -78,6 +108,32 @@ export default function Settings() {
           ))}
         </section>
 
+        <section className="space-y-3">
+          <h2 className="font-display text-base font-bold text-ink">Recurring carts</h2>
+          {carts.length === 0 && <p className="text-sm text-ink-soft">No recurring carts yet.</p>}
+          {carts.map((c) => (
+            <div key={c.id} className="rounded-2xl border border-line bg-surface p-3.5">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="font-semibold text-ink">{c.name}</span>
+                <button onClick={() => reorder(c.id)} className="press text-[13px] font-semibold text-accent">Reorder</button>
+              </div>
+              <div className="flex gap-2">
+                {(["always", "ask", "never"] as const).map((opt) => (
+                  <button
+                    key={opt}
+                    onClick={() => setDecision(c.id, opt)}
+                    className={`press flex-1 rounded-xl border py-2 text-[13px] font-semibold capitalize ${
+                      c.decision === opt ? "border-accent bg-accent text-on-accent" : "border-line bg-surface text-ink-soft"
+                    }`}
+                  >
+                    {opt}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </section>
+
         <section className="rounded-[20px] border border-line bg-surface p-4">
           <label className="text-[12px] font-semibold uppercase tracking-[0.08em] text-accent-ink">New rule</label>
           <textarea
@@ -95,6 +151,7 @@ export default function Settings() {
             <Icon name="plus" size={18} strokeWidth={2.4} />
             {busy ? "Compiling…" : "Add rule"}
           </button>
+          {err && <p className="mt-2 text-[12px] font-medium text-red-500">{err}</p>}
         </section>
       </main>
     </div>
