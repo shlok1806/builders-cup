@@ -16,10 +16,10 @@ export type Pending = {
   recurringCartName?: string;
 };
 
-const Ctx = createContext<{ pending: Pending[]; latest: Pending | null; refresh: () => void }>({
+const Ctx = createContext<{ pending: Pending[]; latest: Pending | null; refresh: () => Promise<void> }>({
   pending: [],
   latest: null,
-  refresh: () => {},
+  refresh: async () => {},
 });
 export const useApprovals = () => useContext(Ctx);
 

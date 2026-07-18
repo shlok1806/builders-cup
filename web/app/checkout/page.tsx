@@ -44,7 +44,6 @@ type SplitLine = {
   splits: { userId: string; amountCents: number }[];
   flag?: { approverId: string; rule: string };
 };
-type Charge = { userId: string; amountCents: number; status: "succeeded" | "failed" };
 
 export default function CheckoutPage() {
   const { cartId } = useCart();
@@ -53,7 +52,7 @@ export default function CheckoutPage() {
   const [subtotal, setSubtotal] = useState(0);
   const [lines, setLines] = useState<SplitLine[] | null>(null);
   const [saved, setSaved] = useState<number | null>(null);
-  const [charges, setCharges] = useState<Charge[] | null>(null);
+  const [completed, setCompleted] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -84,7 +83,7 @@ export default function CheckoutPage() {
     const list: Item[] = j.items ?? [];
     setItems(list);
     setSubtotal(j.subtotalCents ?? 0);
-    setLines(null); setSaved(null); setCharges(null);
+    setLines(null); setSaved(null); setCompleted(false);
     if (list.length === 0) clearCart();
     else setCart(cartId, list.length);
   }
@@ -103,14 +102,15 @@ export default function CheckoutPage() {
 
   async function pay() {
     if (!cartId) return;
-    setBusy("Charging everyone's share…"); setErr(null);
+    setBusy("Recording this purchase…"); setErr(null);
     const r = await fetch(`/api/purchase/${cartId}/checkout`, { method: "POST" });
     const j = await r.json();
     setBusy(null);
-    if (!r.ok) { setErr(j.error ?? "Checkout failed"); return; }
-    const list: Charge[] = j.charges ?? [];
-    setCharges(list);
-    if (list.length > 0 && list.every((c) => c.status === "succeeded")) clearCart();
+    if (!r.ok) { setErr(j.error ?? "Could not record purchase"); return; }
+    if (j.completed) {
+      setCompleted(true);
+      clearCart();
+    }
   }
 
   const name = (id: string) => byId[id]?.name ?? id.slice(0, 6);
@@ -135,15 +135,16 @@ export default function CheckoutPage() {
       <main className="flex-1 space-y-4 px-5 pb-28 pt-1">
         {loading && <p className="px-1 text-[13px] font-medium text-ink-soft">Loading…</p>}
 
-        {paid && (
+        {recorded && (
           <section className="a-rise rounded-[22px] border border-line bg-positive-soft p-6 text-center">
-            <div className="text-[12px] font-semibold uppercase tracking-[0.1em] text-positive">Paid</div>
-            <div className="mt-1 font-display text-[22px] font-bold text-ink">Everyone&apos;s share is settled</div>
+            <div className="text-[12px] font-semibold uppercase tracking-[0.1em] text-positive">Recorded</div>
+            <div className="mt-1 font-display text-[22px] font-bold text-ink">This shared purchase is complete</div>
+            <p className="mt-2 text-[12.5px] font-medium text-ink-soft">It is now in History and counts toward the household budget.</p>
             <Link href="/group" className="press mt-4 inline-block rounded-2xl bg-accent px-5 py-2.5 text-[13px] font-semibold text-on-accent">Back to group</Link>
           </section>
         )}
 
-        {empty && !paid && (
+        {empty && !recorded && (
           <section className="a-rise rounded-[22px] border border-line bg-surface p-8 text-center">
             <Icon name="cart" size={28} className="mx-auto text-ink-faint" />
             <div className="mt-3 text-sm font-semibold text-ink">Your cart is empty</div>
@@ -154,7 +155,7 @@ export default function CheckoutPage() {
 
         {err && <p className="a-rise rounded-2xl border border-line bg-warn-soft px-4 py-3 text-[13px] font-semibold text-ink">{err}</p>}
 
-        {items != null && items.length > 0 && !paid && (
+        {items != null && items.length > 0 && !recorded && (
           <>
             <section className="a-rise space-y-2.5" style={{ animationDelay: "40ms" }}>
               <div className="overflow-hidden rounded-[22px] border border-line bg-surface">
@@ -232,7 +233,7 @@ export default function CheckoutPage() {
                 )}
 
                 <button onClick={pay} disabled={!!busy} className="press w-full rounded-2xl bg-accent py-3 text-[14px] font-semibold text-on-accent disabled:opacity-40">
-                  {busy ?? `Pay everyone's share · ${cents(subtotal)}`}
+                  {busy ?? `Record this purchase · ${cents(subtotal)}`}
                 </button>
               </section>
             )}

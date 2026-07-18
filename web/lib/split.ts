@@ -8,8 +8,14 @@ export function computeSplit(lines: Line[], members: Member[]): SplitResult {
   const allocations: Allocation[] = []
   const flagged: Flag[] = []
   for (const line of lines) {
-    // 1-2. exclusions, with orphan restore (an exclusion can't zero a real cost)
-    let onLine = members.filter((m) => !m.excludedCategories.includes(line.category))
+    // 1-2. exclusions (by category or by item-name keyword), with orphan restore
+    // (an exclusion can't zero a real cost — if everyone's out, everyone's back in)
+    const lineName = line.name.toLowerCase()
+    let onLine = members.filter(
+      (m) =>
+        !m.excludedCategories.includes(line.category) &&
+        !m.excludedItems.some((kw) => lineName.includes(kw))
+    )
     if (onLine.length === 0) onLine = members
     if (onLine.length === 0) continue // no members at all — nothing to allocate
     // 3. weights

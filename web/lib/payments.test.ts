@@ -18,7 +18,7 @@ describe('aggregateSplitsByUser', () => {
     ])
   })
 
-  it('rejects non-integer money before Stripe sees it', () => {
+  it('rejects non-integer split amounts', () => {
     expect(() => aggregateSplitsByUser([{ user_id: 'sam', amount_cents: 10.5 }])).toThrow('integer cents')
   })
 })

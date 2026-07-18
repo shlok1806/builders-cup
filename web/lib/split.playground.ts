@@ -21,21 +21,21 @@ function run(name: string, members: Member[], lines: Line[]) {
 
 // --- Fake household ---
 const household: Member[] = [
-  { userId: 'sam', weight: 1, excludedCategories: [], approvalThresholdCents: 4000 }, // approves >$40
-  { userId: 'priya', weight: 1, excludedCategories: ['alcohol'], approvalThresholdCents: null },
-  { userId: 'alex', weight: 2, excludedCategories: ['meat'], approvalThresholdCents: null }, // eats double
-  { userId: 'jordan', weight: 1, excludedCategories: [], approvalThresholdCents: null },
+  { userId: 'sam', weight: 1, excludedCategories: [], excludedItems: [], approvalThresholdCents: 4000 }, // approves >$40
+  { userId: 'priya', weight: 1, excludedCategories: ['alcohol'], excludedItems: [], approvalThresholdCents: null },
+  { userId: 'alex', weight: 2, excludedCategories: ['meat'], excludedItems: [], approvalThresholdCents: null }, // eats double
+  { userId: 'jordan', weight: 1, excludedCategories: [], excludedItems: [], approvalThresholdCents: null },
 ]
 
 // --- Fake carts: edit freely ---
 run('weekly groceries', household, [
-  { itemId: 'milk', category: 'dairy', lineTotalCents: 499 },
-  { itemId: 'ribeye', category: 'meat', lineTotalCents: 2350 }, // alex excluded
-  { itemId: 'wine', category: 'alcohol', lineTotalCents: 5200 }, // priya excluded + trips sam's $40
-  { itemId: 'bread', category: 'bakery', lineTotalCents: 333 }, // odd cents -> rounding
+  { itemId: 'milk', name: 'milk', category: 'dairy', lineTotalCents: 499 },
+  { itemId: 'ribeye', name: 'ribeye', category: 'meat', lineTotalCents: 2350 }, // alex excluded
+  { itemId: 'wine', name: 'wine', category: 'alcohol', lineTotalCents: 5200 }, // priya excluded + trips sam's $40
+  { itemId: 'bread', name: 'bread', category: 'bakery', lineTotalCents: 333 }, // odd cents -> rounding
 ])
 
 run('everyone excludes it (orphan rule)', household, [
-  { itemId: 'catfood', category: 'pets', lineTotalCents: 1799 },
+  { itemId: 'catfood', name: 'catfood', category: 'pets', lineTotalCents: 1799 },
 ])
 // ^ nobody excludes 'pets' here; to test orphan, give all members excludedCategories: ['pets'].
