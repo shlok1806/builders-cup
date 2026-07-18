@@ -1,0 +1,39 @@
+import type { RawOffer } from './types'
+
+// Cached multi-vendor offers for the demo prompts — served when the live adapters
+// return nothing (offline / rate-limited / blocked on venue wifi). Same normalized-
+// key discipline as the LLM FALLBACKS map so a stray space/capital still hits.
+export function normalizeQuery(q: string): string {
+  return q.trim().toLowerCase().replace(/\s+/g, ' ')
+}
+
+const FIXTURES: Record<string, RawOffer[]> = {
+  'paper towels': [
+    { vendor: 'Walmart', title: 'Bounty Select-A-Size Paper Towels 12 ct', url: null, priceCents: 2299, unit: '12 ct', inStock: true },
+    { vendor: 'Target', title: 'Bounty Select-A-Size Paper Towels 12 ct', url: null, priceCents: 2499, unit: '12 ct', inStock: true },
+    { vendor: 'Amazon', title: 'Bounty Select A Size Paper Towels, 12 Count', url: null, priceCents: 2699, unit: '12 count', inStock: true },
+  ],
+  'coffee': [
+    { vendor: 'Walmart', title: 'Starbucks Pike Place Ground Coffee 28 oz', url: null, priceCents: 1549, unit: '28 oz', inStock: true },
+    { vendor: 'Target', title: 'Starbucks Pike Place Ground Coffee 28 oz', url: null, priceCents: 1699, unit: '28 oz', inStock: true },
+  ],
+  // Tequila kept ~$52 as the cheapest offer so it still trips Sam's $40 threshold
+  // in the split — the approval beat survives the scraped-cart path.
+  'tequila': [
+    { vendor: 'Total Wine', title: 'Casamigos Blanco Tequila 750ml', url: null, priceCents: 5200, unit: '750ml', inStock: true },
+    { vendor: 'Drizly', title: 'Casamigos Blanco Tequila 750ml', url: null, priceCents: 5499, unit: '750ml', inStock: true },
+    { vendor: 'BevMo', title: 'Casamigos Blanco Tequila 750 ml', url: null, priceCents: 5699, unit: '750 ml', inStock: true },
+  ],
+  'tortilla chips': [
+    { vendor: 'Walmart', title: 'Tostitos Scoops Tortilla Chips 10 oz', url: null, priceCents: 999, unit: '10 oz', inStock: true },
+    { vendor: 'Target', title: 'Tostitos Scoops Tortilla Chips 10 oz', url: null, priceCents: 1099, unit: '10 oz', inStock: true },
+  ],
+  'dish soap': [
+    { vendor: 'Target', title: 'Dawn Ultra Dish Soap 19.4 oz', url: null, priceCents: 399, unit: '19.4 oz', inStock: true },
+    { vendor: 'Walmart', title: 'Dawn Ultra Dish Soap 19.4 oz', url: null, priceCents: 449, unit: '19.4 oz', inStock: true },
+  ],
+}
+
+export function getForQuery(normalized: string): RawOffer[] {
+  return FIXTURES[normalized] ?? []
+}
