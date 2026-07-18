@@ -47,22 +47,29 @@ export default function CartPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [build, setBuild] = useState<BuildResp | null>(null);
   const [auto, setAuto] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
 
-  const total = build ? build.items.reduce((s, it) => s + it.unit_price_cents * it.qty, 0) : 0;
+  // Guard items — error responses may omit the array and crash a bare .reduce.
+  const total = build?.items?.reduce((s, it) => s + it.unit_price_cents * it.qty, 0) ?? 0;
 
   async function runBuild(prompt: string) {
     const q = prompt.trim();
     if (!q) return;
     setText(q);
     setBusy("Sourcing the cheapest cart…");
-    setBuild(null); setAuto(null);
+    setBuild(null); setAuto(null); setErr(null);
     const r = await fetch("/api/cart/build", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ text: q, cartId: cartId ?? undefined }),
     });
-    const j: BuildResp = await r.json();
-    setBuild(j);
+    const j = await r.json();
+    if (!r.ok || !Array.isArray(j.items)) {
+      setBusy(null);
+      setErr(j.error ? `Couldn’t build: ${j.error}` : "Couldn’t build that cart — try again");
+      return;
+    }
+    setBuild(j as BuildResp);
     if (j.purchaseId) setCart(j.purchaseId, j.cartCount);
     setText("");
     setBusy(null);
@@ -70,7 +77,7 @@ export default function CartPage() {
 
   async function runAuto() {
     setBusy("Agent checking what's running low…");
-    setBuild(null); setText("");
+    setBuild(null); setText(""); setErr(null);
     const r = await fetch("/api/auto-restock", { method: "POST" });
     const j = await r.json();
     setAuto(j.purchaseId ? `Drafted ${j.lineCount} items ($${(j.subtotalCents / 100).toFixed(2)}) — awaiting approval` : "Nothing due this week");
@@ -139,6 +146,11 @@ export default function CartPage() {
           <div className="a-rise flex items-center gap-2 rounded-2xl border border-line bg-warn-soft px-4 py-3 text-[13px] font-semibold text-ink">
             <span className="rounded-full bg-warn px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">Due this week</span>
             <Link href="/approve?user=sam" className="text-accent-ink">{auto}</Link>
+          </div>
+        )}
+        {err && (
+          <div className="a-rise rounded-2xl border border-line bg-warn-soft px-4 py-3 text-[13px] font-semibold text-ink">
+            {err}
           </div>
         )}
 

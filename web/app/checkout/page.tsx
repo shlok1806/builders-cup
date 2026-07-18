@@ -13,6 +13,10 @@ import { clearCart, setCart, useCart } from "@/lib/useCart";
 
 const cents = (c: number) => money(c / 100);
 
+// Hard floor before the group can check out — a stand-in for "the cart is big
+// enough to bundle into one order". Bypass lets you skip it when needed.
+const MIN_CHECKOUT_ITEMS = 10;
+
 type Item = { id: string; name: string; qty: number; unit_price_cents: number; category: string };
 type SplitLine = {
   itemId: string;
@@ -33,6 +37,7 @@ export default function CheckoutPage() {
   const [charges, setCharges] = useState<Charge[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [bypassMin, setBypassMin] = useState(false);
 
   const load = useCallback(async (id: string) => {
     const r = await fetch(`/api/cart/${id}`);
@@ -86,6 +91,9 @@ export default function CheckoutPage() {
   }
 
   const name = (id: string) => byId[id]?.name ?? id.slice(0, 6);
+  const totalQty = items ? items.reduce((s, it) => s + it.qty, 0) : 0;
+  const belowMin = totalQty < MIN_CHECKOUT_ITEMS && !bypassMin;
+  const remaining = Math.max(0, MIN_CHECKOUT_ITEMS - totalQty);
   const paid = charges != null && charges.length > 0 && charges.every((c) => c.status === "succeeded");
   // cartId===null means no running cart at all → empty. Otherwise wait for the fetch.
   const empty = cartId === null || (items != null && items.length === 0);
@@ -139,15 +147,32 @@ export default function CheckoutPage() {
                   </div>
                 ))}
                 <div className="flex items-center justify-between bg-surface-2 px-4 py-2.5">
-                  <span className="text-[12.5px] font-semibold text-ink-soft">Subtotal</span>
+                  <span className="text-[12.5px] font-semibold text-ink-soft">Subtotal · {totalQty} item{totalQty === 1 ? "" : "s"}</span>
                   <span className="font-display text-[15px] font-bold tabular-nums text-ink">{cents(subtotal)}</span>
                 </div>
               </div>
 
               {!lines && (
-                <button onClick={runSplit} disabled={!!busy} className="press w-full rounded-2xl bg-accent py-3 text-[14px] font-semibold text-on-accent disabled:opacity-40">
-                  {busy ?? "Split by everyone's rules"}
-                </button>
+                <>
+                  {belowMin && (
+                    <div className="rounded-2xl border border-line bg-warn-soft px-4 py-3 text-[12.5px] font-semibold text-ink">
+                      Add {remaining} more item{remaining === 1 ? "" : "s"} to check out — the cart needs at least {MIN_CHECKOUT_ITEMS} to bundle into one order.
+                      <Link href="/cart" className="press ml-1 text-accent-ink">Add more ›</Link>
+                    </div>
+                  )}
+                  <button onClick={runSplit} disabled={!!busy || belowMin} className="press w-full rounded-2xl bg-accent py-3 text-[14px] font-semibold text-on-accent disabled:opacity-40">
+                    {busy ?? (belowMin ? `${totalQty} / ${MIN_CHECKOUT_ITEMS} items to check out` : "Split by everyone's rules")}
+                  </button>
+                  {belowMin && (
+                    <button
+                      type="button"
+                      onClick={() => setBypassMin(true)}
+                      className="press w-full rounded-2xl border border-line bg-surface py-3 text-[13px] font-semibold text-ink-soft"
+                    >
+                      Bypass · check out with {totalQty} item{totalQty === 1 ? "" : "s"}
+                    </button>
+                  )}
+                </>
               )}
             </section>
 
